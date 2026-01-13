@@ -378,7 +378,7 @@ export class MoodleClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Cookie': `MoodleSession=${this.sessionCookie}`,
+          'Cookie': `MoodleSessionprod=${this.sessionCookie}`,
         },
         body: JSON.stringify([{
           index: 0,

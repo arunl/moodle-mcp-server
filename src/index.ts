@@ -5,6 +5,11 @@
  * 
  * An MCP (Model Context Protocol) server that provides access to Moodle LMS.
  * Allows AI assistants to interact with courses, assignments, grades, and more.
+ * 
+ * Features:
+ * - Token-based authentication (standard Moodle web services)
+ * - Session-based authentication (for SSO/university Moodle)
+ * - Browser extension integration (auto-sync credentials)
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -14,52 +19,169 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
+import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { MoodleClient } from './moodle-client.js';
+import { getBrowserBridge, BrowserBridge } from './browser-bridge.js';
+
+// Browser bridge for two-way communication with extension
+let browserBridge: BrowserBridge | null = null;
+const WS_PORT = parseInt(process.env.MCP_WS_PORT || '3848', 10);
 
 // Configuration from environment variables
-const MOODLE_URL = process.env.MOODLE_URL;
+let MOODLE_URL = process.env.MOODLE_URL;
 const MOODLE_TOKEN = process.env.MOODLE_TOKEN;
 const MOODLE_USERNAME = process.env.MOODLE_USERNAME;
 const MOODLE_PASSWORD = process.env.MOODLE_PASSWORD;
 const MOODLE_SERVICE = process.env.MOODLE_SERVICE || 'moodle_mobile_app';
 // Session-based auth (for SSO/university Moodle where tokens are disabled)
-const MOODLE_SESSION = process.env.MOODLE_SESSION;  // MoodleSession cookie
-const MOODLE_SESSKEY = process.env.MOODLE_SESSKEY;  // Session key
+let MOODLE_SESSION = process.env.MOODLE_SESSION;  // MoodleSession cookie
+let MOODLE_SESSKEY = process.env.MOODLE_SESSKEY;  // Session key
 
-if (!MOODLE_URL) {
-  console.error('Error: MOODLE_URL environment variable is required');
-  process.exit(1);
+// HTTP server port for browser extension communication
+const HTTP_PORT = parseInt(process.env.MCP_HTTP_PORT || '3847', 10);
+const ENABLE_HTTP = process.env.MCP_ENABLE_HTTP !== 'false'; // Enable by default
+
+// Initialize Moodle client (will be updated when extension sends credentials)
+let moodleClient: MoodleClient | null = null;
+
+function initializeMoodleClient() {
+  if (!MOODLE_URL) {
+    console.error('Warning: MOODLE_URL not set. Waiting for browser extension...');
+    return false;
+  }
+
+  const hasTokenAuth = MOODLE_TOKEN || (MOODLE_USERNAME && MOODLE_PASSWORD);
+  const hasSessionAuth = MOODLE_SESSION && MOODLE_SESSKEY;
+
+  if (!hasTokenAuth && !hasSessionAuth) {
+    console.error('Warning: No authentication configured. Waiting for browser extension...');
+    return false;
+  }
+
+  moodleClient = new MoodleClient({
+    baseUrl: MOODLE_URL,
+    token: MOODLE_TOKEN,
+    username: MOODLE_USERNAME,
+    password: MOODLE_PASSWORD,
+    service: MOODLE_SERVICE,
+    sessionCookie: MOODLE_SESSION,
+    sessKey: MOODLE_SESSKEY,
+  });
+
+  // Log auth mode
+  if (hasSessionAuth) {
+    console.error('Moodle MCP Server: Using session-based authentication (SSO mode)');
+  } else if (MOODLE_TOKEN) {
+    console.error('Moodle MCP Server: Using token-based authentication');
+  } else {
+    console.error('Moodle MCP Server: Using username/password authentication');
+  }
+
+  return true;
 }
 
-const hasTokenAuth = MOODLE_TOKEN || (MOODLE_USERNAME && MOODLE_PASSWORD);
-const hasSessionAuth = MOODLE_SESSION && MOODLE_SESSKEY;
+// Try to initialize with environment variables
+initializeMoodleClient();
 
-if (!hasTokenAuth && !hasSessionAuth) {
-  console.error('Error: Authentication required. Provide one of:');
-  console.error('  - MOODLE_TOKEN (web service token)');
-  console.error('  - MOODLE_USERNAME + MOODLE_PASSWORD (for non-SSO Moodle)');
-  console.error('  - MOODLE_SESSION + MOODLE_SESSKEY (for SSO/university Moodle)');
-  process.exit(1);
+// ============================================================================
+// HTTP Server for Browser Extension Communication
+// ============================================================================
+
+function startHttpServer() {
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    // CORS headers for browser extension
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/status') {
+      // Health check endpoint
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        hasCredentials: moodleClient !== null,
+        moodleUrl: MOODLE_URL || null,
+        timestamp: Date.now(),
+      }));
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/session') {
+      // Receive credentials from browser extension
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          
+          if (!data.moodleUrl || !data.sessionCookie || !data.sesskey) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Missing required fields: moodleUrl, sessionCookie, sesskey' }));
+            return;
+          }
+
+          // Update credentials
+          MOODLE_URL = data.moodleUrl;
+          MOODLE_SESSION = data.sessionCookie;
+          MOODLE_SESSKEY = data.sesskey;
+
+          // Reinitialize client with new credentials
+          moodleClient = new MoodleClient({
+            baseUrl: MOODLE_URL!, // We just set this above from data.moodleUrl
+            sessionCookie: MOODLE_SESSION,
+            sessKey: MOODLE_SESSKEY,
+          });
+
+          console.error(`Moodle MCP Server: Credentials updated from browser extension`);
+          console.error(`  URL: ${MOODLE_URL}`);
+          console.error(`  Session updated at: ${new Date().toISOString()}`);
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            success: true, 
+            message: 'Credentials updated successfully',
+            moodleUrl: MOODLE_URL,
+          }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+
+    // 404 for unknown routes
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  });
+
+  server.listen(HTTP_PORT, '127.0.0.1', () => {
+    console.error(`Moodle MCP Server: HTTP API listening on http://127.0.0.1:${HTTP_PORT}`);
+    console.error(`  - GET  /status  - Check server status`);
+    console.error(`  - POST /session - Update credentials from browser extension`);
+  });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Warning: Port ${HTTP_PORT} in use. HTTP API disabled.`);
+      console.error(`  Another MCP server may be running, or set MCP_HTTP_PORT to use a different port.`);
+    } else {
+      console.error('HTTP server error:', err);
+    }
+  });
+
+  return server;
 }
 
-// Initialize Moodle client
-const moodleClient = new MoodleClient({
-  baseUrl: MOODLE_URL,
-  token: MOODLE_TOKEN,
-  username: MOODLE_USERNAME,
-  password: MOODLE_PASSWORD,
-  service: MOODLE_SERVICE,
-  sessionCookie: MOODLE_SESSION,
-  sessKey: MOODLE_SESSKEY,
-});
-
-// Log auth mode
-if (hasSessionAuth) {
-  console.error('Moodle MCP Server: Using session-based authentication (SSO mode)');
-} else if (MOODLE_TOKEN) {
-  console.error('Moodle MCP Server: Using token-based authentication');
-} else {
-  console.error('Moodle MCP Server: Using username/password authentication');
+// Start HTTP server if enabled
+if (ENABLE_HTTP) {
+  startHttpServer();
 }
 
 // Define available tools
@@ -243,6 +365,73 @@ const tools: Tool[] = [
       required: ['query'],
     },
   },
+  // ============================================================================
+  // Browser-based tools (requires browser extension)
+  // ============================================================================
+  {
+    name: 'browse_moodle',
+    description: 'Navigate to a Moodle page and extract its content. Use this when API access is not available or when you need to access pages that are not exposed via API. Requires the browser extension to be installed and connected.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'The full URL to navigate to (e.g., https://moodle.louisiana.edu/course/view.php?id=12345)',
+        },
+        path: {
+          type: 'string',
+          description: 'Alternative: A path relative to the Moodle base URL (e.g., /course/view.php?id=12345)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'click_moodle_element',
+    description: 'Click an element on the current Moodle page. Use CSS selectors to identify the element.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: {
+          type: 'string',
+          description: 'CSS selector for the element to click (e.g., "#settings-menu", ".btn-primary", "a[href*=edit]")',
+        },
+      },
+      required: ['selector'],
+    },
+  },
+  {
+    name: 'extract_moodle_page',
+    description: 'Extract data from the current Moodle page. Returns page title, URL, links, headings, and other structured data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        include_html: {
+          type: 'boolean',
+          description: 'Include raw HTML content (default: false)',
+        },
+        include_text: {
+          type: 'boolean',
+          description: 'Include full text content (default: true)',
+        },
+        selectors: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific CSS selectors to extract (e.g., [".course-content", "#region-main"])',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_browser_status',
+    description: 'Check if the browser extension is connected and ready to receive commands.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // Helper function to format dates
@@ -350,6 +539,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
+    // Check if client is initialized
+    if (!moodleClient) {
+      throw new Error(
+        'Moodle client not initialized. Please either:\n' +
+        '1. Set MOODLE_URL and MOODLE_SESSION/MOODLE_SESSKEY environment variables, or\n' +
+        '2. Install the browser extension and log into Moodle to auto-sync credentials.\n' +
+        `   HTTP API is listening on http://127.0.0.1:${HTTP_PORT}`
+      );
+    }
+
     // Authenticate if needed (username/password flow)
     if (!MOODLE_TOKEN && MOODLE_USERNAME && MOODLE_PASSWORD) {
       await moodleClient.authenticate(MOODLE_USERNAME, MOODLE_PASSWORD);
@@ -626,6 +825,127 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      // ========================================================================
+      // Browser-based tools
+      // ========================================================================
+      case 'browse_moodle': {
+        if (!browserBridge || !browserBridge.isConnected()) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: 'Browser extension not connected',
+                  help: 'Please ensure the Moodle MCP browser extension is installed and you have a Moodle tab open.',
+                  wsStatus: browserBridge?.getStatus() || { running: false },
+                }, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        let targetUrl = args?.url as string;
+        if (!targetUrl && args?.path) {
+          targetUrl = `${MOODLE_URL}${args.path}`;
+        }
+        if (!targetUrl) {
+          throw new Error('Either url or path is required');
+        }
+
+        const navResult = await browserBridge.navigate(targetUrl);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(navResult.success ? navResult.data : { error: navResult.error }, null, 2),
+            },
+          ],
+          isError: !navResult.success,
+        };
+      }
+
+      case 'click_moodle_element': {
+        if (!browserBridge || !browserBridge.isConnected()) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: 'Browser extension not connected',
+                  help: 'Please ensure the Moodle MCP browser extension is installed.',
+                }, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const selector = args?.selector as string;
+        if (!selector) {
+          throw new Error('selector is required');
+        }
+
+        const clickResult = await browserBridge.click(selector);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(clickResult.success ? clickResult.data : { error: clickResult.error }, null, 2),
+            },
+          ],
+          isError: !clickResult.success,
+        };
+      }
+
+      case 'extract_moodle_page': {
+        if (!browserBridge || !browserBridge.isConnected()) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: 'Browser extension not connected',
+                  help: 'Please ensure the Moodle MCP browser extension is installed.',
+                }, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const extractResult = await browserBridge.extract({
+          includeHtml: args?.include_html as boolean,
+          includeText: args?.include_text as boolean,
+          selectors: args?.selectors as string[],
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(extractResult.success ? extractResult.data : { error: extractResult.error }, null, 2),
+            },
+          ],
+          isError: !extractResult.success,
+        };
+      }
+
+      case 'get_browser_status': {
+        const status = browserBridge?.getStatus() || { running: false, connected: false, clientCount: 0 };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                browserBridge: status,
+                moodleUrl: MOODLE_URL || 'Not configured',
+                hasSession: !!(MOODLE_SESSION && MOODLE_SESSKEY),
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -645,9 +965,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Start the server
 async function main() {
+  // Start browser bridge for two-way communication with extension
+  browserBridge = getBrowserBridge(WS_PORT);
+  try {
+    await browserBridge.start();
+    console.error(`Browser bridge started on ws://127.0.0.1:${WS_PORT}`);
+  } catch (e) {
+    console.error(`Warning: Could not start browser bridge: ${e}`);
+    // Continue anyway - the bridge is optional
+  }
+
+  // Start MCP server
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Moodle MCP Server started');
+  
+  // Log status
+  if (browserBridge?.isConnected()) {
+    console.error('Browser extension connected - full functionality available');
+  } else {
+    console.error('Waiting for browser extension connection...');
+    console.error('Install the extension from browser-extension/ and open a Moodle tab');
+  }
 }
 
 main().catch((error) => {

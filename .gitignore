@@ -12,6 +12,7 @@ dist/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 
@@ -29,3 +30,6 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Course-specific materials (instructor's personal content)
+course-materials/

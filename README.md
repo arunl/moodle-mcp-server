@@ -5,7 +5,36 @@ An MCP (Model Context Protocol) server that provides AI assistants with access t
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)
 
-## Features
+## ⚠️ Important: University Moodle Compatibility
+
+Many universities **disable Moodle's Web Services API**, which this MCP server requires. If your university uses SSO (Single Sign-On) and you cannot find security tokens in your Moodle preferences, the API is likely disabled.
+
+### Alternative: Browser-Based Access (Recommended for Universities)
+
+If your university has web services disabled, you can still access Moodle through **Cursor's browser extension**:
+
+1. **Install the Cursor Browser Extension** in Chrome/Edge
+2. **Log into Moodle** in your browser
+3. **Ask Cursor naturally**: *"Get my courses from Moodle"*
+
+Cursor will navigate to Moodle pages directly and extract the information for you.
+
+**Requirements for browser-based access:**
+- ✅ Browser must be open and logged into Moodle
+- ✅ Cursor browser extension installed and connected
+- ✅ Works with SSO/university authentication
+- ❌ Does NOT require API tokens or web services
+
+**Example prompts:**
+- *"Show me my Moodle courses"*
+- *"What assignments are due this week?"*
+- *"Get the contents of my Software Methodology course"*
+
+---
+
+## Features (API Mode)
+
+If your Moodle instance has web services enabled, this MCP server provides:
 
 - 📚 **Courses** - List enrolled courses, view course contents and materials
 - 📝 **Assignments** - Get assignments, due dates, submission status, and feedback
@@ -15,10 +44,11 @@ An MCP (Model Context Protocol) server that provides AI assistants with access t
 - 💬 **Forums** - Browse forum discussions
 - 🔍 **Search** - Search for courses across the platform
 
-## Requirements
+## Requirements (API Mode)
 
 - Node.js 18.0.0 or higher
 - A Moodle account (student, teacher, or any role)
+- **Moodle Web Services enabled** by your administrator
 - A Moodle security token (see [Getting Your Token](#getting-your-token))
 
 ## Installation
@@ -246,7 +276,68 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## Browser-Based Access (Detailed)
+
+For universities with web services disabled, here's the complete setup for browser-based Moodle access:
+
+### Setup Steps
+
+1. **Install Cursor Browser Extension**
+   - Open Chrome or Edge
+   - Go to `chrome://extensions` or `edge://extensions`
+   - Enable "Developer mode"
+   - Install the Cursor browser extension (check Cursor documentation)
+
+2. **Log into Moodle**
+   - Navigate to your Moodle site (e.g., `moodle.yourschool.edu`)
+   - Complete SSO/login process
+   - Stay logged in (don't close the browser)
+
+3. **Use Natural Language in Cursor**
+   - Ask: *"Get my courses from Moodle"*
+   - Cursor will open your Moodle in the browser and extract info
+
+### How It Works
+
+```
+┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
+│   Cursor    │────▶│ Browser Extension │────▶│   Moodle    │
+│  (AI Chat)  │◀────│   (navigates)     │◀────│  (web page) │
+└─────────────┘     └──────────────────┘     └─────────────┘
+```
+
+- Cursor controls your browser via the extension
+- Navigates to Moodle pages and reads the content
+- No API tokens required - uses your existing browser session
+
+### Limitations
+
+| Aspect | Browser Mode | API Mode (MCP Server) |
+|--------|--------------|----------------------|
+| Requires browser open | ✅ Yes | ❌ No |
+| Works with SSO | ✅ Yes | ⚠️ Limited |
+| Requires API tokens | ❌ No | ✅ Yes |
+| Speed | Slower (page loads) | Faster (direct API) |
+| Works offline | ❌ No | ❌ No |
+
+### Troubleshooting Browser Mode
+
+**"Not connected to Moodle"**
+- Make sure you're logged into Moodle in your browser
+- Check that the browser extension is active
+- Try refreshing the Moodle page
+
+**"Session expired"**
+- Log back into Moodle
+- University sessions typically expire after 2 hours of inactivity
+
+**Browser not responding**
+- Check if browser extension is installed and enabled
+- Restart the browser
+- Reload Cursor window (Ctrl+Shift+P → "Reload Window")
+
 ## Acknowledgments
 
 - [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
 - [Moodle](https://moodle.org/) Learning Management System
+- University of Louisiana at Lafayette for testing

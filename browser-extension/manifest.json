@@ -1,39 +1,35 @@
 {
   "manifest_version": 3,
   "name": "Moodle MCP Session Helper",
-  "version": "1.0.0",
-  "description": "Automatically extracts Moodle session credentials for the MCP server",
+  "version": "2.0.1",
+  "description": "Two-way bridge between Moodle and MCP server - enables AI to browse Moodle",
   "permissions": [
     "cookies",
     "activeTab",
+    "tabs",
     "storage",
-    "clipboardWrite"
+    "clipboardWrite",
+    "scripting"
   ],
   "host_permissions": [
-    "*://*.moodle.louisiana.edu/*",
-    "*://moodle.louisiana.edu/*"
+    "https://moodle.louisiana.edu/*",
+    "https://*.moodle.louisiana.edu/*",
+    "http://moodle.louisiana.edu/*",
+    "http://*.moodle.louisiana.edu/*",
+    "*://*.louisiana.edu/*",
+    "<all_urls>"
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icon16.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
-    }
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.moodle.louisiana.edu/*", "*://moodle.louisiana.edu/*"],
+      "matches": ["*://*.moodle.louisiana.edu/*", "*://moodle.louisiana.edu/*", "*://*.louisiana.edu/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
   "background": {
     "service_worker": "background.js"
-  },
-  "icons": {
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
   }
 }

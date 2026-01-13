@@ -1,0 +1,87 @@
+# Smithery MCP Registry Configuration
+# https://smithery.ai
+
+name: moodle-mcp
+title: Moodle MCP Server
+description: |
+  Connect any AI assistant to your Moodle LMS. Browse courses, create content, 
+  manage assignments, and interact with Moodle using natural language.
+  
+  Works with any Moodle instance (including those with SSO) by using a browser 
+  extension that keeps your credentials secure in your browser.
+
+author: Arun Lakhotia
+repository: https://github.com/arunlakhotia/moodle-mcp
+documentation: https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/HOSTED-SERVICE-ARCHITECTURE.md
+license: MIT
+
+# Transport configuration for hosted service
+transport: sse
+endpoint: https://moodle-mcp.example.com/mcp/sse
+
+# Authentication
+auth:
+  type: bearer
+  header: Authorization
+  description: |
+    Requires an API key from the Moodle MCP dashboard.
+    1. Sign up at https://moodle-mcp.example.com
+    2. Get your API key from the dashboard
+    3. Install the browser extension
+    4. Add API key to your MCP client configuration
+
+# Capabilities
+capabilities:
+  tools: true
+  resources: false
+  prompts: false
+
+# Tags for discovery
+tags:
+  - education
+  - lms
+  - moodle
+  - courses
+  - university
+  - e-learning
+
+# Available tools
+tools:
+  - name: get_browser_status
+    description: Check if browser extension is connected
+  - name: browse_moodle
+    description: Navigate to any Moodle page
+  - name: click_element
+    description: Click elements on Moodle pages
+  - name: type_text
+    description: Type into input fields
+  - name: extract_page_content
+    description: Extract content from current page
+  - name: set_editor_content
+    description: Set HTML content in Moodle editors
+  - name: get_courses
+    description: List user's Moodle courses
+  - name: get_course_content
+    description: Get activities in a course
+  - name: get_enrolled_users
+    description: List enrolled users (instructors only)
+
+# Example prompts
+examples:
+  - prompt: "Show me my Moodle courses"
+    description: Lists all courses the user is enrolled in
+  - prompt: "Navigate to my CMPS 453 course"
+    description: Opens a specific course
+  - prompt: "Create a new chapter in the course book with this content..."
+    description: Adds content to Moodle Book
+  - prompt: "How many students are enrolled in this course?"
+    description: Gets enrollment information
+
+# Requirements
+requirements:
+  - Browser extension must be installed and logged in
+  - User must be logged into their Moodle in the browser
+  - API key from moodle-mcp.example.com
+
+# Version
+version: "2.0.0"

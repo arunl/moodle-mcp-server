@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Moodle MCP Bridge",
+  "version": "2.0.0",
+  "description": "Connect your Moodle session to AI assistants via the Moodle MCP hosted service",
+  "permissions": [
+    "storage",
+    "cookies",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*.moodle.louisiana.edu/*",
+    "*://moodle.louisiana.edu/*",
+    "*://*.moodle.*/*",
+    "*://moodle.*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.moodle.*/*", "*://moodle.*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Moodle MCP Bridge"
+  },
+  "icons": {
+    "48": "icon.svg",
+    "128": "icon.svg"
+  }
+}

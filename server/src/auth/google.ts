@@ -28,5 +28,5 @@ export async function getGoogleUser(accessToken: string): Promise<GoogleUser> {
     throw new Error('Failed to fetch Google user info');
   }
 
-  return response.json();
+  return response.json() as Promise<GoogleUser>;
 }

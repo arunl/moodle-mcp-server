@@ -1,14 +1,20 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { serveStatic } from 'hono/serve-static';
 import { serve } from '@hono/node-server';
 import { createNodeWebSocket } from '@hono/node-ws';
-import { WebSocket as HonoWebSocket } from 'hono/ws';
 import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 import mcpRoutes from './routes/mcp.js';
 import { connectionManager } from './bridge/connection-manager.js';
+
+// Type declarations for Hono context variables
+declare module 'hono' {
+  interface ContextVariableMap {
+    userId: string;
+    userEmail: string;
+  }
+}
 
 const app = new Hono();
 
@@ -32,8 +38,78 @@ app.get('/health', (c) => {
     status: 'ok',
     version: '1.0.0',
     connections: stats.totalConnections,
+    mode: process.env.NODE_ENV || 'development',
   });
 });
+
+// Development mode endpoints (only available when NODE_ENV !== 'production')
+if (process.env.NODE_ENV !== 'production') {
+  const { createAccessToken, generateApiKey, hashApiKey } = await import('./auth/jwt.js');
+  const { db, users, apiKeys } = await import('./db/index.js');
+  const { eq } = await import('drizzle-orm');
+
+  // Dev login - creates a test user and returns tokens
+  app.post('/dev/login', async (c) => {
+    const testUserId = 'dev-user-001';
+    const testEmail = 'dev@localhost';
+    
+    // Check if test user exists
+    let [user] = await db.select().from(users).where(eq(users.id, testUserId));
+    
+    if (!user) {
+      // Create test user
+      [user] = await db.insert(users).values({
+        id: testUserId,
+        email: testEmail,
+        name: 'Dev User',
+        googleId: 'dev-google-id',
+      }).returning();
+      console.log('[Dev] Created test user:', testEmail);
+    }
+    
+    // Generate tokens
+    const accessToken = await createAccessToken(user.id, user.email, user.name || undefined);
+    
+    return c.json({
+      message: 'Dev login successful',
+      user: { id: user.id, email: user.email, name: user.name },
+      accessToken,
+      instructions: 'Use this token in Authorization header or set as cookie',
+    });
+  });
+
+  // Dev API key - generates an API key for the test user
+  app.post('/dev/api-key', async (c) => {
+    const testUserId = 'dev-user-001';
+    
+    // Check if test user exists
+    const [user] = await db.select().from(users).where(eq(users.id, testUserId));
+    if (!user) {
+      return c.json({ error: 'Run /dev/login first to create test user' }, 400);
+    }
+    
+    // Generate API key
+    const key = generateApiKey();
+    const keyHash = await hashApiKey(key);
+    const keyPrefix = key.substring(0, 12);
+    
+    await db.insert(apiKeys).values({
+      userId: testUserId,
+      keyHash,
+      keyPrefix,
+      name: 'Dev Key',
+    });
+    
+    return c.json({
+      message: 'Dev API key created',
+      apiKey: key,
+      keyPrefix,
+      instructions: 'Use in MCP config: Authorization: Bearer ' + key,
+    });
+  });
+
+  console.log('🔧 Dev mode enabled: /dev/login and /dev/api-key available');
+}
 
 // Auth routes
 app.route('/auth', authRoutes);

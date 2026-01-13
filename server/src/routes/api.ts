@@ -45,7 +45,8 @@ api.get('/keys', async (c) => {
 // Create new API key
 api.post('/keys', async (c) => {
   const userId = c.get('userId');
-  const { name = 'Default' } = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({})) as { name?: string };
+  const name = body.name || 'Default';
 
   // Check key limit (5 per user)
   const existingKeys = await db
@@ -113,7 +114,7 @@ api.get('/mcp-config', async (c) => {
     .where(and(eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)))
     .limit(1);
 
-  const serverUrl = process.env.SERVER_URL || 'https://moodle-mcp.example.com';
+  const serverUrl = process.env.SERVER_URL || 'https://mcpconnector.io';
 
   const config = {
     note: 'Add this to your AI client MCP configuration',

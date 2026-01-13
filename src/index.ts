@@ -22,14 +22,23 @@ const MOODLE_TOKEN = process.env.MOODLE_TOKEN;
 const MOODLE_USERNAME = process.env.MOODLE_USERNAME;
 const MOODLE_PASSWORD = process.env.MOODLE_PASSWORD;
 const MOODLE_SERVICE = process.env.MOODLE_SERVICE || 'moodle_mobile_app';
+// Session-based auth (for SSO/university Moodle where tokens are disabled)
+const MOODLE_SESSION = process.env.MOODLE_SESSION;  // MoodleSession cookie
+const MOODLE_SESSKEY = process.env.MOODLE_SESSKEY;  // Session key
 
 if (!MOODLE_URL) {
   console.error('Error: MOODLE_URL environment variable is required');
   process.exit(1);
 }
 
-if (!MOODLE_TOKEN && (!MOODLE_USERNAME || !MOODLE_PASSWORD)) {
-  console.error('Error: Either MOODLE_TOKEN or MOODLE_USERNAME/MOODLE_PASSWORD is required');
+const hasTokenAuth = MOODLE_TOKEN || (MOODLE_USERNAME && MOODLE_PASSWORD);
+const hasSessionAuth = MOODLE_SESSION && MOODLE_SESSKEY;
+
+if (!hasTokenAuth && !hasSessionAuth) {
+  console.error('Error: Authentication required. Provide one of:');
+  console.error('  - MOODLE_TOKEN (web service token)');
+  console.error('  - MOODLE_USERNAME + MOODLE_PASSWORD (for non-SSO Moodle)');
+  console.error('  - MOODLE_SESSION + MOODLE_SESSKEY (for SSO/university Moodle)');
   process.exit(1);
 }
 
@@ -40,7 +49,18 @@ const moodleClient = new MoodleClient({
   username: MOODLE_USERNAME,
   password: MOODLE_PASSWORD,
   service: MOODLE_SERVICE,
+  sessionCookie: MOODLE_SESSION,
+  sessKey: MOODLE_SESSKEY,
 });
+
+// Log auth mode
+if (hasSessionAuth) {
+  console.error('Moodle MCP Server: Using session-based authentication (SSO mode)');
+} else if (MOODLE_TOKEN) {
+  console.error('Moodle MCP Server: Using token-based authentication');
+} else {
+  console.error('Moodle MCP Server: Using username/password authentication');
+}
 
 // Define available tools
 const tools: Tool[] = [

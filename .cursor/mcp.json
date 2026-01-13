@@ -1,0 +1,12 @@
+﻿{
+  "mcpServers": {
+    "moodle": {
+      "command": "node",
+      "args": ["C:/Users/rnlkh/Desktop/workspace/university/moodle-mcp/dist/index.js"],
+      "env": {
+        "MOODLE_URL": "https://moodle.louisiana.edu",
+        "MOODLE_TOKEN": "PASTE_YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}

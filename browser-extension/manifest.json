@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Moodle MCP Session Helper",
+  "version": "1.0.0",
+  "description": "Automatically extracts Moodle session credentials for the MCP server",
+  "permissions": [
+    "cookies",
+    "activeTab",
+    "storage",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "*://*.moodle.louisiana.edu/*",
+    "*://moodle.louisiana.edu/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.moodle.louisiana.edu/*", "*://moodle.louisiana.edu/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

@@ -1,14 +1,22 @@
 /**
  * Moodle REST API Client
  * Handles authentication and API calls to Moodle LMS
+ * 
+ * Supports two authentication methods:
+ * 1. Token-based (for Moodle instances with web services enabled)
+ * 2. Session-based (for SSO/university Moodle where tokens are disabled)
  */
 
 export interface MoodleConfig {
   baseUrl: string;
+  // Token-based auth
   token?: string;
   username?: string;
   password?: string;
   service?: string;
+  // Session-based auth (for SSO/university Moodle)
+  sessionCookie?: string;  // MoodleSession cookie value
+  sessKey?: string;        // Session key from page
 }
 
 export interface MoodleCourse {
@@ -287,6 +295,10 @@ export class MoodleClient {
   private baseUrl: string;
   private token: string | null = null;
   private service: string;
+  // Session-based auth
+  private sessionCookie: string | null = null;
+  private sessKey: string | null = null;
+  private useSessionAuth: boolean = false;
 
   constructor(config: MoodleConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
@@ -294,6 +306,13 @@ export class MoodleClient {
     
     if (config.token) {
       this.token = config.token;
+    }
+    
+    // Session-based authentication (for SSO/university Moodle)
+    if (config.sessionCookie && config.sessKey) {
+      this.sessionCookie = config.sessionCookie;
+      this.sessKey = config.sessKey;
+      this.useSessionAuth = true;
     }
   }
 
@@ -325,12 +344,66 @@ export class MoodleClient {
    */
   setToken(token: string): void {
     this.token = token;
+    this.useSessionAuth = false;
   }
 
   /**
-   * Make an API call to Moodle
+   * Set session-based authentication (for SSO Moodle)
    */
-  async call<T>(wsfunction: string, params: Record<string, unknown> = {}): Promise<T> {
+  setSession(sessionCookie: string, sessKey: string): void {
+    this.sessionCookie = sessionCookie;
+    this.sessKey = sessKey;
+    this.useSessionAuth = true;
+  }
+
+  /**
+   * Check if using session-based authentication
+   */
+  isSessionAuth(): boolean {
+    return this.useSessionAuth;
+  }
+
+  /**
+   * Make an API call using session-based authentication (internal AJAX API)
+   * This is used for Moodle instances where web service tokens are disabled
+   */
+  async callSession<T>(methodname: string, args: Record<string, unknown> = {}): Promise<T> {
+    if (!this.sessionCookie || !this.sessKey) {
+      throw new Error('Session authentication not configured. Please provide sessionCookie and sessKey.');
+    }
+
+    const response = await fetch(
+      `${this.baseUrl}/lib/ajax/service.php?sesskey=${this.sessKey}&info=${methodname}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': `MoodleSession=${this.sessionCookie}`,
+        },
+        body: JSON.stringify([{
+          index: 0,
+          methodname,
+          args,
+        }]),
+      }
+    );
+
+    const data = await response.json();
+
+    if (Array.isArray(data) && data[0]) {
+      if (data[0].error) {
+        throw new Error(`Moodle API Error: ${data[0].exception?.message || 'Unknown error'} (${data[0].exception?.errorcode || 'unknown'})`);
+      }
+      return data[0].data as T;
+    }
+
+    throw new Error('Unexpected response format from Moodle');
+  }
+
+  /**
+   * Make an API call to Moodle (token-based authentication)
+   */
+  async callToken<T>(wsfunction: string, params: Record<string, unknown> = {}): Promise<T> {
     if (!this.token) {
       throw new Error('Not authenticated. Please provide a token or call authenticate() first.');
     }
@@ -377,6 +450,16 @@ export class MoodleClient {
     }
 
     return data as T;
+  }
+
+  /**
+   * Make an API call to Moodle (auto-selects auth method)
+   */
+  async call<T>(wsfunction: string, params: Record<string, unknown> = {}): Promise<T> {
+    if (this.useSessionAuth) {
+      return this.callSession<T>(wsfunction, params);
+    }
+    return this.callToken<T>(wsfunction, params);
   }
 
   /**

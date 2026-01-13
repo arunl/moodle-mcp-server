@@ -432,6 +432,41 @@ const tools: Tool[] = [
       required: [],
     },
   },
+  {
+    name: 'set_moodle_editor_content',
+    description: `Set HTML content in a Moodle rich text editor (Atto editor). This tool handles the complexity of Moodle's editor by using JavaScript to directly set both the hidden textarea and the contenteditable div. Use this for creating or editing Moodle Book chapters, pages, labels, or any content with the Atto editor.
+
+IMPORTANT: You must be on the edit page of the content you want to modify before calling this tool.
+
+Example usage:
+1. Navigate to the edit page (e.g., edit.php?cmid=123&id=456)
+2. Call this tool with your HTML content
+3. The tool will set the content and optionally save
+
+Supports styled HTML including:
+- Blockquotes with inline styles
+- Colored backgrounds and borders
+- Custom fonts and text formatting
+- Tables and lists`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        html_content: {
+          type: 'string',
+          description: 'The HTML content to set in the editor. Can include inline styles for rich formatting.',
+        },
+        editor_selector: {
+          type: 'string',
+          description: 'CSS selector for the editor textarea (default: auto-detect Moodle Atto editor)',
+        },
+        auto_save: {
+          type: 'boolean',
+          description: 'Whether to automatically click the save button after setting content (default: false)',
+        },
+      },
+      required: ['html_content'],
+    },
+  },
 ];
 
 // Helper function to format dates
@@ -943,6 +978,145 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               }, null, 2),
             },
           ],
+        };
+      }
+
+      case 'set_moodle_editor_content': {
+        if (!browserBridge || !browserBridge.isConnected()) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: 'Browser extension not connected',
+                  help: 'Please ensure the Moodle MCP browser extension is installed and connected.',
+                }, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const htmlContent = args?.html_content as string;
+        if (!htmlContent) {
+          throw new Error('html_content is required');
+        }
+
+        const autoSave = args?.auto_save as boolean || false;
+
+        // JavaScript to set content in Moodle's Atto editor
+        // This handles both the hidden textarea and the contenteditable div
+        const setEditorScript = `
+          (function() {
+            const htmlContent = ${JSON.stringify(htmlContent)};
+            
+            // Find the hidden textarea (Moodle uses this to store the actual content)
+            const textareas = document.querySelectorAll('textarea[id*="content"], textarea[name*="content"]');
+            let textarea = null;
+            for (const ta of textareas) {
+              if (ta.id.includes('editor') || ta.name.includes('editor')) {
+                textarea = ta;
+                break;
+              }
+            }
+            if (!textarea) {
+              textarea = document.querySelector('textarea.editor_atto_content') || 
+                         document.querySelector('#id_content_editor') ||
+                         document.querySelector('textarea[name="content_editor[text]"]');
+            }
+            
+            if (!textarea) {
+              return { success: false, error: 'Could not find editor textarea. Make sure you are on an edit page.' };
+            }
+            
+            // Set the textarea value
+            textarea.value = htmlContent;
+            
+            // Also update the contenteditable div (Atto's visual editor)
+            const editableDiv = document.querySelector('[contenteditable="true"]');
+            if (editableDiv) {
+              editableDiv.innerHTML = htmlContent;
+            }
+            
+            // Trigger change events
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            return { 
+              success: true, 
+              message: 'Content set successfully',
+              textareaId: textarea.id,
+              editableDivFound: !!editableDiv
+            };
+          })();
+        `;
+
+        const result = await browserBridge.evaluate(setEditorScript);
+
+        // Cast result data to expected shape
+        const resultData = result.data as { success?: boolean; error?: string; message?: string } | undefined;
+
+        if (!result.success) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ error: result.error || 'Failed to execute script' }, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // If auto_save is true, click the save button
+        if (autoSave && resultData?.success) {
+          const saveScript = `
+            (function() {
+              const saveBtn = document.querySelector('button[type="submit"]:not([name="cancel"])') ||
+                              document.querySelector('input[type="submit"][name="submitbutton"]') ||
+                              document.querySelector('#id_submitbutton') ||
+                              document.querySelector('button:contains("Save")');
+              
+              if (!saveBtn) {
+                // Try to find by button text
+                const buttons = document.querySelectorAll('button, input[type="submit"]');
+                for (const btn of buttons) {
+                  if (btn.textContent?.toLowerCase().includes('save') || 
+                      btn.value?.toLowerCase().includes('save')) {
+                    btn.click();
+                    return { success: true, message: 'Clicked save button' };
+                  }
+                }
+                return { success: false, error: 'Could not find save button' };
+              }
+              
+              saveBtn.click();
+              return { success: true, message: 'Clicked save button' };
+            })();
+          `;
+          const saveResult = await browserBridge.evaluate(saveScript);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  contentSet: result.data,
+                  saveAttempt: saveResult.data,
+                }, null, 2),
+              },
+            ],
+            isError: !saveResult.success,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(resultData, null, 2),
+            },
+          ],
+          isError: !resultData?.success,
         };
       }
 

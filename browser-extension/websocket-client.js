@@ -140,6 +140,9 @@ async function handleCommand(command) {
       case 'wait':
         return await handleWait(id, params);
       
+      case 'evaluate':
+        return await handleEvaluate(id, params);
+      
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -349,6 +352,49 @@ async function handleWait(id, params) {
   }
   
   return { id, success: false, error: `Element not found within ${timeout}ms: ${selector}` };
+}
+
+/**
+ * Evaluate arbitrary JavaScript in the page context
+ * This is useful for complex DOM manipulations like setting Moodle editor content
+ */
+async function handleEvaluate(id, params) {
+  const { script } = params;
+  
+  if (!script) {
+    return { id, success: false, error: 'No script provided' };
+  }
+  
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tabs[0]) {
+    return { id, success: false, error: 'No active tab' };
+  }
+  
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      func: (scriptCode) => {
+        try {
+          // Execute the script and return the result
+          const fn = new Function(scriptCode);
+          return fn();
+        } catch (e) {
+          return { error: e.message };
+        }
+      },
+      args: [script]
+    });
+    
+    const evalResult = result[0]?.result;
+    
+    if (evalResult && evalResult.error) {
+      return { id, success: false, error: evalResult.error };
+    }
+    
+    return { id, success: true, data: evalResult };
+  } catch (e) {
+    return { id, success: false, error: e.message };
+  }
 }
 
 /**

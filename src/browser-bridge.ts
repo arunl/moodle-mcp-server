@@ -11,7 +11,7 @@ import { createServer, Server as HttpServer } from 'http';
 // Command types that can be sent to the browser
 export interface BrowserCommand {
   id: string;
-  action: 'navigate' | 'click' | 'type' | 'extract' | 'screenshot' | 'get_element' | 'wait';
+  action: 'navigate' | 'click' | 'type' | 'extract' | 'screenshot' | 'get_element' | 'wait' | 'evaluate';
   params: Record<string, unknown>;
 }
 
@@ -257,6 +257,17 @@ export class BrowserBridge {
     return this.sendCommand({
       action: 'wait',
       params: options,
+    });
+  }
+
+  /**
+   * Evaluate JavaScript in the browser context
+   * Useful for complex DOM manipulations like setting Moodle editor content
+   */
+  async evaluate(script: string): Promise<BrowserResponse> {
+    return this.sendCommand({
+      action: 'evaluate',
+      params: { script },
     });
   }
 

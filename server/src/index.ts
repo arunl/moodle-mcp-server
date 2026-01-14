@@ -48,6 +48,101 @@ if (process.env.NODE_ENV !== 'production') {
   const { db, users, apiKeys } = await import('./db/index.js');
   const { eq } = await import('drizzle-orm');
 
+  // Dev page - simple UI for testing
+  app.get('/dev', (c) => {
+    return c.html(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dev Mode - MCP Connector</title>
+  <style>
+    body { font-family: system-ui; background: #0a0a0f; color: #f0f0f5; padding: 2rem; max-width: 600px; margin: 0 auto; }
+    h1 { color: #ff6b35; }
+    .card { background: #1a1a24; padding: 1.5rem; border-radius: 12px; margin: 1rem 0; }
+    button { background: linear-gradient(135deg, #ff6b35, #ff8c5a); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 1rem; margin: 0.5rem 0.5rem 0.5rem 0; }
+    button:hover { transform: translateY(-2px); }
+    pre { background: #12121a; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
+    .success { color: #10b981; }
+    .label { color: #a0a0b0; font-size: 0.875rem; margin-bottom: 0.5rem; }
+    #result { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>🔧 Dev Mode</h1>
+  <p>Test the MCP Connector without Google OAuth</p>
+  
+  <div class="card">
+    <h3>Step 1: Create Test User</h3>
+    <button onclick="devLogin()">Create Dev User & Get Token</button>
+    <div id="login-result"></div>
+  </div>
+  
+  <div class="card">
+    <h3>Step 2: Generate API Key</h3>
+    <button onclick="getApiKey()">Generate API Key</button>
+    <div id="key-result"></div>
+  </div>
+  
+  <div class="card">
+    <h3>Step 3: Use in MCP Config</h3>
+    <p class="label">Add this to your Cursor MCP config:</p>
+    <pre id="config-template">{
+  "mcpServers": {
+    "moodle": {
+      "transport": {
+        "type": "sse",
+        "url": "http://localhost:8080/mcp/sse"
+      },
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
+}</pre>
+  </div>
+
+  <script>
+    let currentToken = '';
+    let currentApiKey = '';
+    
+    async function devLogin() {
+      const res = await fetch('/dev/login', { method: 'POST' });
+      const data = await res.json();
+      currentToken = data.accessToken;
+      document.getElementById('login-result').innerHTML = 
+        '<p class="success">✅ ' + data.message + '</p>' +
+        '<p class="label">User: ' + data.user.email + '</p>' +
+        '<p class="label">Token (for extension):</p><pre style="word-break:break-all">' + data.accessToken + '</pre>';
+    }
+    
+    async function getApiKey() {
+      const res = await fetch('/dev/api-key', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) {
+        document.getElementById('key-result').innerHTML = '<p style="color:#ef4444">❌ ' + data.error + '</p>';
+        return;
+      }
+      currentApiKey = data.apiKey;
+      document.getElementById('key-result').innerHTML = 
+        '<p class="success">✅ ' + data.message + '</p>' +
+        '<p class="label">API Key (save this!):</p><pre>' + data.apiKey + '</pre>';
+      
+      // Update config template
+      document.getElementById('config-template').textContent = JSON.stringify({
+        mcpServers: {
+          moodle: {
+            transport: { type: "sse", url: "http://localhost:8080/mcp/sse" },
+            headers: { Authorization: "Bearer " + data.apiKey }
+          }
+        }
+      }, null, 2);
+    }
+  </script>
+</body>
+</html>
+    `);
+  });
+
   // Dev login - creates a test user and returns tokens
   app.post('/dev/login', async (c) => {
     const testUserId = 'dev-user-001';

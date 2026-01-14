@@ -1,6 +1,7 @@
 // Popup script for Moodle MCP Bridge
 
-const SERVER_URL = 'https://moodle-mcp.example.com';
+// For local development, use localhost:8080
+const SERVER_URL = 'http://localhost:8080';
 
 // DOM elements
 const loadingEl = document.getElementById('loading');
@@ -8,6 +9,7 @@ const loggedOutEl = document.getElementById('logged-out');
 const loggedInEl = document.getElementById('logged-in');
 
 const loginBtn = document.getElementById('login-btn');
+const devLoginBtn = document.getElementById('dev-login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const reconnectBtn = document.getElementById('reconnect-btn');
 const dashboardBtn = document.getElementById('dashboard-btn');
@@ -61,6 +63,29 @@ function updateStatus(element, connected, text) {
 loginBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ action: 'login' });
   window.close();
+});
+
+// Dev login for local testing
+devLoginBtn.addEventListener('click', async () => {
+  try {
+    // Call dev login endpoint
+    const response = await fetch(`${SERVER_URL}/dev/login`, { method: 'POST' });
+    const data = await response.json();
+    
+    if (data.accessToken) {
+      // Send token to background script
+      await chrome.runtime.sendMessage({ 
+        action: 'devLogin', 
+        token: data.accessToken,
+        user: data.user
+      });
+      loadStatus();
+    } else {
+      alert('Dev login failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    alert('Dev login failed: ' + error.message + '\\nMake sure the server is running at ' + SERVER_URL);
+  }
 });
 
 logoutBtn.addEventListener('click', async () => {

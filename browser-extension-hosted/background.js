@@ -1,8 +1,12 @@
 // Background service worker for Moodle MCP Bridge (Hosted Version)
+// VERSION 2.1.0 - If you see this in console, the correct extension is loaded!
+console.log('[MoodleMCP v2.1.0] Background script loaded - connecting to localhost:8080');
 
 // Server configuration - change for production
-const SERVER_URL = 'https://moodle-mcp.example.com';
-const WS_URL = SERVER_URL.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws';
+// For local development, use localhost:8080
+const SERVER_URL = 'http://localhost:8080';
+const WS_URL = 'ws://localhost:8080/ws';
+console.log('[MoodleMCP] WebSocket URL:', WS_URL);
 
 let ws = null;
 let reconnectAttempts = 0;
@@ -394,6 +398,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'reconnect') {
     connectWebSocket();
     sendResponse({ success: true });
+    return true;
+  }
+  
+  if (message.action === 'devLogin') {
+    // Dev login with provided token
+    saveTokens(message.token, null, message.user).then(() => {
+      connectWebSocket();
+      sendResponse({ success: true });
+    });
     return true;
   }
 });

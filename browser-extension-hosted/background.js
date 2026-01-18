@@ -15,6 +15,8 @@ const RECONNECT_DELAY = 5000;
 
 // Get stored auth tokens
 async function getTokens() {
+  // [AL] - access token for bridge to mcp server
+  // [AL] - how do you know its the correct access token. there is nothing identifying the bridge.
   const result = await chrome.storage.local.get(['accessToken', 'refreshToken', 'user']);
   return result;
 }

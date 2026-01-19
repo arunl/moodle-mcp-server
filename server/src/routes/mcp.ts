@@ -803,7 +803,8 @@ async function handleToolCall(
         await sendBrowserCommand(userId, 'navigate', {
           url: `/mod/forum/view.php?id=${args.forum_cmid}`,
         });
-        await sendBrowserCommand(userId, 'wait', { selector: 'table, .discussion-list', timeout: 10000 });
+        // Wait for any discussion link or forum content to appear
+        await sendBrowserCommand(userId, 'wait', { selector: 'a[href*="discuss.php"], .forumpost, [data-region="discussion-list"], .forum-discussion-list', timeout: 10000 });
         
         // Extract discussions from the forum page
         const forumResult = await sendBrowserCommand(userId, 'extract_forum_discussions', {});

@@ -205,8 +205,6 @@ async function handleCommand(command) {
         return await handleExtractActivities(id, params, tab);
       case 'set_activity_date':
         return await handleSetActivityDate(id, params, tab);
-      case 'extract_forum_discussions':
-        return await handleExtractForumDiscussions(id, params, tab);
       case 'extract_discussion_replies':
         return await handleExtractDiscussionReplies(id, params, tab);
       default:

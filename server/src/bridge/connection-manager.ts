@@ -177,8 +177,8 @@ export interface BrowserCommand {
     // Moodle-specific extraction actions (CSP-safe, no eval)
     | 'extract_participants' | 'extract_editing_status' | 'extract_addable_sections' 
     | 'extract_forum_discussions' | 'extract_course_sections'
-    // Forum analytics actions
-    | 'extract_discussion_replies'
+    // Forum/Feedback analytics actions
+    | 'extract_discussion_replies' | 'extract_feedback_responses'
     // Assignment extraction actions
     | 'extract_assignments' | 'extract_assignment_details' | 'extract_submissions'
     // Generic activity actions

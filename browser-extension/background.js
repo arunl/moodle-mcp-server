@@ -211,6 +211,8 @@ async function handleCommand(command) {
         return await handleSetActivityDate(id, params, tab);
       case 'extract_discussion_replies':
         return await handleExtractDiscussionReplies(id, params, tab);
+      case 'extract_feedback_responses':
+        return await handleExtractFeedbackResponses(id, params, tab);
       case 'send_moodle_message':
         return await handleSendMoodleMessage(id, params, tab);
       default:
@@ -1444,6 +1446,113 @@ async function handleExtractDiscussionReplies(id, params, tab) {
   });
   
   return { id, ...result[0].result };
+}
+
+// Extract feedback activity responses
+async function handleExtractFeedbackResponses(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const responses = [];
+      
+      // Try to find responses in the show_entries.php table
+      // Moodle feedback shows responses in a table with columns like: Name, Time, etc.
+      const tables = document.querySelectorAll('table');
+      
+      for (const table of tables) {
+        const rows = table.querySelectorAll('tbody tr');
+        
+        rows.forEach((row) => {
+          // Look for a user link in the row
+          const userLink = row.querySelector('a[href*="/user/view.php"], a[href*="user/view.php"]');
+          const cells = row.querySelectorAll('td');
+          
+          if (cells.length >= 2) {
+            let name = null;
+            let date = null;
+            let anonymous = false;
+            
+            // Check if anonymous response
+            const anonymousText = row.textContent.toLowerCase();
+            if (anonymousText.includes('anonymous') || anonymousText.includes('anonym')) {
+              anonymous = true;
+              name = 'Anonymous';
+            } else if (userLink) {
+              name = userLink.textContent.trim();
+              // Clean up avatar initials if present (e.g., "TATyler Addeo" -> "Tyler Addeo")
+              const initialsMatch = name.match(/^([A-Z]{2,3})([A-Z][a-z].*)$/);
+              if (initialsMatch) {
+                name = initialsMatch[2];
+              }
+            } else {
+              // Try to get name from first cell
+              const firstCell = cells[0];
+              const text = firstCell.textContent.trim();
+              if (text && !text.match(/^\d+$/)) {
+                name = text;
+              }
+            }
+            
+            // Look for date in cells (format like "Monday, 13 January 2025, 10:30 AM")
+            for (const cell of cells) {
+              const cellText = cell.textContent.trim();
+              // Match date patterns
+              if (cellText.match(/\d{1,2}\s+\w+\s+\d{4}|\d{4}-\d{2}-\d{2}|\w+day,?\s+\d{1,2}/i)) {
+                date = cellText;
+                break;
+              }
+            }
+            
+            if (name) {
+              responses.push({
+                name,
+                date: date || null,
+                anonymous,
+              });
+            }
+          }
+        });
+        
+        // If we found responses in this table, don't look at other tables
+        if (responses.length > 0) {
+          break;
+        }
+      }
+      
+      // Also check for "No entries" or similar message
+      const noEntriesEl = document.querySelector('.alert, .notification, .no-overflow');
+      const hasNoEntries = noEntriesEl && noEntriesEl.textContent.toLowerCase().includes('no entries');
+      
+      // Get feedback info
+      const feedbackTitle = document.querySelector('h2, .page-title, [role="heading"]')?.textContent.trim();
+      const feedbackIdMatch = window.location.href.match(/id=(\d+)/);
+      const feedbackId = feedbackIdMatch ? parseInt(feedbackIdMatch[1]) : null;
+      
+      return {
+        success: true,
+        data: {
+          feedbackId,
+          feedbackTitle,
+          responses,
+          responseCount: responses.length,
+          hasNoEntries,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  // Return data directly (without nested 'data' wrapper for consistency)
+  const extractedData = result[0].result?.data || {};
+  return { 
+    id, 
+    success: true,
+    responses: extractedData.responses || [],
+    responseCount: extractedData.responseCount || 0,
+    feedbackId: extractedData.feedbackId,
+    feedbackTitle: extractedData.feedbackTitle,
+    url: extractedData.url,
+  };
 }
 
 // Send a message to a Moodle user via the messaging interface

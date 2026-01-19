@@ -1150,106 +1150,104 @@ async function handleExtractForumDiscussions(id, params, tab) {
     target: { tabId: tab.id },
     func: () => {
       const discussions = [];
+      const seenIds = new Set();
       
-      // Find all discussion rows in the forum
-      const discussionRows = document.querySelectorAll('tr.discussion, .discussion-list-item, [data-region="discussion-list"] tr');
+      // Method 1: Find all discussion links directly (most reliable)
+      const allLinks = document.querySelectorAll('a[href*="/mod/forum/discuss.php?d="]');
       
-      discussionRows.forEach((row) => {
-        // Try to get discussion link and title
-        const titleLink = row.querySelector('a.w-100.h-100, .discussion-name a, td.topic a, .discussionname a');
-        if (!titleLink) return;
+      allLinks.forEach((link) => {
+        const href = link.href;
+        // Only get main discussion links (not parent= links which are reply references)
+        if (href.includes('parent=')) return;
         
-        const title = titleLink.textContent.trim();
-        const href = titleLink.href;
         const discussionIdMatch = href.match(/d=(\d+)/);
-        const discussionId = discussionIdMatch ? parseInt(discussionIdMatch[1]) : null;
+        if (!discussionIdMatch) return;
         
-        // Get author (Started by)
-        const authorCell = row.querySelector('td.author, .discussion-started-by, .author-info');
+        const discussionId = parseInt(discussionIdMatch[1]);
+        if (seenIds.has(discussionId)) return;
+        seenIds.add(discussionId);
+        
+        const title = link.textContent.trim();
+        // Skip non-title links (dates, etc)
+        if (!title || title.match(/^\d{1,2}\s+\w{3}\s+\d{4}$/)) return;
+        
+        // Try to find the row/container this link is in
+        const row = link.closest('tr, .discussion-list-item, [data-discussionid]');
+        
         let author = null;
-        if (authorCell) {
-          const authorLink = authorCell.querySelector('a');
-          author = authorLink ? authorLink.textContent.trim() : authorCell.textContent.trim();
-        }
-        
-        // Get reply count
-        const repliesCell = row.querySelector('td.replies, .discussion-replies, [data-region="replies"]');
         let replyCount = 0;
-        if (repliesCell) {
-          const replyText = repliesCell.textContent.trim();
-          const replyMatch = replyText.match(/(\d+)/);
-          replyCount = replyMatch ? parseInt(replyMatch[1]) : 0;
-        }
         
-        // Get last post info
-        const lastPostCell = row.querySelector('td.lastpost, .discussion-last-post');
-        let lastPostAuthor = null;
-        let lastPostDate = null;
-        if (lastPostCell) {
-          const lastPostLink = lastPostCell.querySelector('a');
-          if (lastPostLink) {
-            lastPostAuthor = lastPostLink.textContent.trim();
+        if (row) {
+          // Look for author info - usually has user profile link
+          const authorLinks = row.querySelectorAll('a[href*="/user/view.php"], a[href*="/user/profile.php"]');
+          if (authorLinks.length > 0) {
+            // First user link is usually the author
+            author = authorLinks[0].textContent.trim();
           }
-          const dateText = lastPostCell.textContent;
-          const dateMatch = dateText.match(/(\d{1,2}\s+\w+\s+\d{4})/);
-          lastPostDate = dateMatch ? dateMatch[1] : null;
+          
+          // Look for reply count - usually a number in its own cell or span
+          const replyCell = row.querySelector('td:nth-last-child(2), .replies-count, [data-region="replies"]');
+          if (replyCell) {
+            const num = parseInt(replyCell.textContent.trim());
+            if (!isNaN(num)) replyCount = num;
+          }
         }
         
-        if (discussionId && title) {
+        discussions.push({
+          id: discussionId,
+          title,
+          author,
+          replyCount,
+          url: href,
+        });
+      });
+      
+      // Method 2: Try table body rows if method 1 didn't work well
+      if (discussions.length === 0) {
+        const rows = document.querySelectorAll('table tbody tr');
+        rows.forEach((row) => {
+          const titleLink = row.querySelector('a[href*="discuss.php"]');
+          if (!titleLink) return;
+          
+          const href = titleLink.href;
+          const discussionIdMatch = href.match(/d=(\d+)/);
+          if (!discussionIdMatch) return;
+          
+          const discussionId = parseInt(discussionIdMatch[1]);
+          if (seenIds.has(discussionId)) return;
+          seenIds.add(discussionId);
+          
+          const title = titleLink.textContent.trim();
+          
+          // Get cells
+          const cells = row.querySelectorAll('td');
+          let author = null;
+          let replyCount = 0;
+          
+          // Author usually in 2nd cell with user link
+          if (cells.length > 1) {
+            const authorLink = cells[1].querySelector('a[href*="user"]');
+            if (authorLink) {
+              author = authorLink.textContent.trim();
+            }
+          }
+          
+          // Replies usually in a later cell
+          for (let i = cells.length - 1; i >= 0; i--) {
+            const num = parseInt(cells[i].textContent.trim());
+            if (!isNaN(num) && num < 1000) {
+              replyCount = num;
+              break;
+            }
+          }
+          
           discussions.push({
             id: discussionId,
             title,
             author,
             replyCount,
-            lastPostAuthor,
-            lastPostDate,
             url: href,
           });
-        }
-      });
-      
-      // Alternative: try the table format
-      if (discussions.length === 0) {
-        const tableRows = document.querySelectorAll('table.forumheaderlist tbody tr, .generaltable tbody tr');
-        tableRows.forEach((row) => {
-          const cells = row.querySelectorAll('td');
-          if (cells.length < 3) return;
-          
-          const titleCell = cells[0];
-          const titleLink = titleCell.querySelector('a');
-          if (!titleLink) return;
-          
-          const title = titleLink.textContent.trim();
-          const href = titleLink.href;
-          const discussionIdMatch = href.match(/d=(\d+)/);
-          const discussionId = discussionIdMatch ? parseInt(discussionIdMatch[1]) : null;
-          
-          // Author is typically in cell 1 or has class 'author'
-          let author = null;
-          const authorCell = row.querySelector('td.author') || cells[1];
-          if (authorCell) {
-            const authorLink = authorCell.querySelector('a');
-            author = authorLink ? authorLink.textContent.trim() : authorCell.textContent.trim().split('\n')[0].trim();
-          }
-          
-          // Replies count
-          let replyCount = 0;
-          const repliesCell = row.querySelector('td.replies');
-          if (repliesCell) {
-            replyCount = parseInt(repliesCell.textContent.trim()) || 0;
-          } else if (cells.length > 3) {
-            replyCount = parseInt(cells[cells.length - 2]?.textContent.trim()) || 0;
-          }
-          
-          if (discussionId && title) {
-            discussions.push({
-              id: discussionId,
-              title,
-              author,
-              replyCount,
-              url: href,
-            });
-          }
         });
       }
       

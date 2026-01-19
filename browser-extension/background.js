@@ -1,6 +1,6 @@
 // Background service worker for Moodle MCP Bridge (Hosted Version)
-// VERSION 2.1.0 - If you see this in console, the correct extension is loaded!
-console.log('[MoodleMCP v2.1.0] Background script loaded - connecting to localhost:8080');
+// VERSION 2.2.0 - Added dedicated Moodle extraction handlers (CSP-safe)
+console.log('[MoodleMCP v2.2.0] Background script loaded - connecting to localhost:8080');
 
 // Server configuration - change for production
 // For local development, use localhost:8080
@@ -174,6 +174,15 @@ async function handleCommand(command) {
         return await handleEvaluate(id, params, tab);
       case 'wait':
         return await handleWait(id, params, tab);
+      // Moodle-specific extraction handlers (CSP-safe, no eval)
+      case 'extract_participants':
+        return await handleExtractParticipants(id, params, tab);
+      case 'extract_editing_status':
+        return await handleExtractEditingStatus(id, params, tab);
+      case 'extract_addable_sections':
+        return await handleExtractAddableSections(id, params, tab);
+      case 'extract_forum_discussions':
+        return await handleExtractForumDiscussions(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -335,6 +344,144 @@ async function handleWait(id, params, tab) {
       return { success: false, error: `Timeout waiting for: ${sel}` };
     },
     args: [selector, timeout],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+// ===========================================
+// Moodle-specific extraction handlers (CSP-safe)
+// ===========================================
+
+async function handleExtractParticipants(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const participants = [];
+      // Try the participants table
+      const rows = document.querySelectorAll('table#participants tbody tr, table.generaltable tbody tr');
+      
+      rows.forEach((row) => {
+        const nameLink = row.querySelector('a[href*="/user/view.php"]');
+        const roleCell = row.querySelector('td[data-column="roles"], td:nth-child(3)');
+        const emailCell = row.querySelector('td[data-column="email"]');
+        
+        if (nameLink) {
+          const href = nameLink.getAttribute('href');
+          const idMatch = href.match(/id=(\d+)/);
+          participants.push({
+            name: nameLink.textContent.trim(),
+            userId: idMatch ? parseInt(idMatch[1]) : null,
+            profileUrl: nameLink.href,
+            role: roleCell ? roleCell.textContent.trim() : null,
+            email: emailCell ? emailCell.textContent.trim() : null,
+          });
+        }
+      });
+      
+      // Get total count if available
+      const countEl = document.querySelector('.userlist-count, [data-region="participants-count"]');
+      const totalMatch = document.body.textContent.match(/(\d+)\s*participants?\s*found/i);
+      
+      return {
+        success: true,
+        data: {
+          participants,
+          total: totalMatch ? parseInt(totalMatch[1]) : participants.length,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtractEditingStatus(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      // Check for editing mode indicators
+      const editButton = document.querySelector('button.section-modchooser[data-action="open-chooser"]');
+      const editModeInput = document.querySelector('input[name="setmode"]');
+      const editingOn = document.body.classList.contains('editing') || 
+                        !!editButton || 
+                        (editModeInput && editModeInput.value === '0');
+      
+      return {
+        success: true,
+        data: {
+          enabled: editingOn,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtractAddableSections(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const buttons = document.querySelectorAll('button.section-modchooser[data-sectionid]');
+      const sections = [];
+      
+      buttons.forEach((btn) => {
+        const sectionId = btn.getAttribute('data-sectionid');
+        if (sectionId) {
+          sections.push(parseInt(sectionId));
+        }
+      });
+      
+      return {
+        success: true,
+        data: {
+          sections: [...new Set(sections)], // Remove duplicates
+          count: sections.length,
+        },
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtractForumDiscussions(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const discussions = [];
+      
+      // Try different forum layouts
+      const rows = document.querySelectorAll('.forumpost, .discussion, table.forumheaderlist tbody tr, [data-region="discussion-list"] article');
+      
+      rows.forEach((row) => {
+        const titleLink = row.querySelector('a.discussion-link, a[href*="discuss.php"], .topic a, .subject a');
+        const authorEl = row.querySelector('.author, .lastpost a[href*="user/view.php"]');
+        
+        if (titleLink) {
+          const href = titleLink.getAttribute('href');
+          const idMatch = href.match(/d=(\d+)/);
+          discussions.push({
+            title: titleLink.textContent.trim(),
+            discussionId: idMatch ? parseInt(idMatch[1]) : null,
+            url: titleLink.href,
+            author: authorEl ? authorEl.textContent.trim() : null,
+          });
+        }
+      });
+      
+      return {
+        success: true,
+        data: {
+          discussions,
+          count: discussions.length,
+          url: window.location.href,
+        },
+      };
+    },
   });
   
   return { id, ...result[0].result };

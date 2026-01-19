@@ -6,70 +6,10 @@ import { hashApiKey } from '../auth/jwt.js';
 import { connectionManager, BrowserCommand } from '../bridge/connection-manager.js';
 import { moodleTools, generateCommandId } from '../mcp/tools.js';
 
-// -----------------------------
-// Macro helper scripts (run in browser context)
-// -----------------------------
-function parseParticipantsScript(): string {
-  return `(() => {
-    const table = document.querySelector('table#participants');
-    if (!table) return { totalRows: undefined, participants: [] };
-
-    const totalRowsAttr = table.getAttribute('data-table-total-rows');
-    const totalRows = totalRowsAttr ? Number(totalRowsAttr) : undefined;
-
-    const headerCells = Array.from(table.querySelectorAll('thead th'));
-    const headerText = headerCells.map(th => (th.textContent || '').trim().toLowerCase());
-    const idxName = headerText.findIndex(t => t.includes('name'));
-    const idxEmail = headerText.findIndex(t => t.includes('email'));
-    const idxRoles = headerText.findIndex(t => t.includes('roles'));
-    const idxGroups = headerText.findIndex(t => t.includes('groups'));
-    const idxLastAccess = headerText.findIndex(t => t.includes('last access'));
-
-    const rows = Array.from(table.querySelectorAll('tbody tr'));
-    const participants = rows.map(tr => {
-      const tds = Array.from(tr.querySelectorAll('td'));
-      const getCellText = (i) => (i >= 0 && tds[i]) ? (tds[i].textContent || '').trim() : undefined;
-
-      let name;
-      let profileUrl;
-      if (idxName >= 0 && tds[idxName]) {
-        const a = tds[idxName].querySelector('a');
-        name = (a?.textContent || tds[idxName].textContent || '').trim() || undefined;
-        profileUrl = a?.href;
-      }
-
-      const email = getCellText(idxEmail);
-      const rolesText = getCellText(idxRoles);
-      const groupsText = getCellText(idxGroups);
-      const lastAccess = getCellText(idxLastAccess);
-
-      const roles = rolesText ? rolesText.split(',').map(s => s.trim()).filter(Boolean) : undefined;
-      const groups = groupsText ? groupsText.split(',').map(s => s.trim()).filter(Boolean) : undefined;
-
-      return { name, profileUrl, email, roles, groups, lastAccess };
-    });
-
-    return { totalRows, participants };
-  })()`;
-}
-
-function parseForumDiscussionsScript(): string {
-  return `(() => {
-    const rows = Array.from(document.querySelectorAll('tr[data-region="discussion-list-item"]'));
-    const discussions = rows.map(row => {
-      const id = row.getAttribute('data-discussionid');
-      const a = row.querySelector('th.topic a');
-      const title = (a?.textContent || '').trim();
-      const url = a?.href;
-      return {
-        discussionId: id ? Number(id) : undefined,
-        title,
-        url,
-      };
-    }).filter(d => d.discussionId && d.url);
-    return { discussions };
-  })()`;
-}
+// Note: Moodle-specific extraction logic has been moved to the browser extension
+// (background.js) to avoid CSP issues with eval(). The server now uses dedicated
+// action types: extract_participants, extract_editing_status, extract_addable_sections,
+// extract_forum_discussions
 
 const mcp = new Hono();
 
@@ -328,18 +268,17 @@ async function handleToolCall(
 
       case 'open_participants':
         await sendBrowserCommand(userId, 'navigate', { url: `/user/index.php?id=${args.course_id}` });
-        await sendBrowserCommand(userId, 'wait', { selector: 'table#participants', timeout: 10000 });
-        result = await sendBrowserCommand(userId, 'evaluate', {
-          script: `(() => ({ url: location.href, title: document.title }))()`,
-        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table#participants, table.generaltable', timeout: 10000 });
+        result = await sendBrowserCommand(userId, 'extract', {});
         break;
 
       case 'list_participants':
         await sendBrowserCommand(userId, 'navigate', {
           url: `/user/index.php?id=${args.course_id}&page=${args.page ?? 0}`,
         });
-        await sendBrowserCommand(userId, 'wait', { selector: 'table#participants', timeout: 10000 });
-        result = await sendBrowserCommand(userId, 'evaluate', { script: parseParticipantsScript() });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table#participants, table.generaltable', timeout: 10000 });
+        // Use CSP-safe dedicated handler instead of evaluate
+        result = await sendBrowserCommand(userId, 'extract_participants', {});
         result = { page: args.page ?? 0, ...result };
         break;
 
@@ -348,9 +287,8 @@ async function handleToolCall(
           url: `/course/view.php?id=${args.course_id}&notifyeditingon=1`,
         });
         await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 10000 });
-        result = await sendBrowserCommand(userId, 'evaluate', {
-          script: `(() => ({ enabled: !!document.querySelector('button.section-modchooser[data-action="open-chooser"]'), url: location.href }))()`,
-        });
+        // Use CSP-safe dedicated handler instead of evaluate
+        result = await sendBrowserCommand(userId, 'extract_editing_status', {});
         break;
 
       case 'list_addable_sections':
@@ -358,21 +296,15 @@ async function handleToolCall(
           selector: 'button.section-modchooser[data-sectionid]',
           timeout: 10000,
         });
-        result = await sendBrowserCommand(userId, 'evaluate', {
-          script: `(() => {
-            const buttons = Array.from(document.querySelectorAll('button.section-modchooser[data-sectionid]'));
-            const sections = buttons
-              .map(b => Number(b.getAttribute('data-sectionid')))
-              .filter(n => Number.isFinite(n));
-            return { sections: Array.from(new Set(sections)) };
-          })()`,
-        });
+        // Use CSP-safe dedicated handler instead of evaluate
+        result = await sendBrowserCommand(userId, 'extract_addable_sections', {});
         break;
 
       case 'forum_list_discussions':
         await sendBrowserCommand(userId, 'navigate', { url: `/mod/forum/view.php?id=${args.forum_view_id}` });
-        await sendBrowserCommand(userId, 'wait', { selector: 'tr[data-region="discussion-list-item"]', timeout: 10000 });
-        result = await sendBrowserCommand(userId, 'evaluate', { script: parseForumDiscussionsScript() });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table.forumheaderlist, [data-region="discussion-list"]', timeout: 10000 });
+        // Use CSP-safe dedicated handler instead of evaluate
+        result = await sendBrowserCommand(userId, 'extract_forum_discussions', {});
         result = { forumViewId: args.forum_view_id, ...result };
         break;
 

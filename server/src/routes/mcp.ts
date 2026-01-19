@@ -1019,6 +1019,67 @@ async function handleToolCall(
         };
         break;
 
+      case 'analyze_feedback':
+        // Navigate to feedback responses page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/feedback/show_entries.php?id=${args.feedback_cmid}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table, .no-overflow', timeout: 10000 });
+        
+        // Extract feedback responses
+        const feedbackResult = await sendBrowserCommand(userId, 'extract_feedback_responses', {});
+        const feedbackResponses: Array<{
+          name: string;
+          date: string;
+          anonymous: boolean;
+        }> = feedbackResult?.responses || feedbackResult?.data?.responses || [];
+        
+        // Get respondent names (excluding anonymous)
+        const feedbackExcludeSet = new Set<string>((args.exclude_users || []).map((u: string) => u.toLowerCase()));
+        const respondentNames = new Set<string>();
+        
+        feedbackResponses.forEach((r) => {
+          if (r.name && !r.anonymous && !feedbackExcludeSet.has(r.name.toLowerCase())) {
+            respondentNames.add(r.name);
+          }
+        });
+        
+        // Get enrolled students
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/user/index.php?id=${args.course_id}&perpage=5000&treset=1`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
+        
+        const fbParticipantsResult = await sendBrowserCommand(userId, 'extract_participants', {});
+        const fbParticipants = fbParticipantsResult?.participants || fbParticipantsResult?.data?.participants || [];
+        
+        // Filter to students only
+        const fbEnrolledStudents = fbParticipants
+          .filter((p: { role: string; name: string }) => 
+            p.role?.toLowerCase() === 'student' && !feedbackExcludeSet.has(p.name?.toLowerCase())
+          )
+          .map((p: { name: string; userId: number }) => ({ name: p.name, userId: p.userId }));
+        
+        // Find non-respondents
+        const fbNonRespondents = fbEnrolledStudents.filter(
+          (s: { name: string }) => !respondentNames.has(s.name)
+        );
+        
+        result = {
+          feedbackCmid: args.feedback_cmid,
+          totalResponses: feedbackResponses.length,
+          respondents: Array.from(respondentNames),
+          respondentCount: respondentNames.size,
+          enrolledStudentCount: fbEnrolledStudents.length,
+          nonRespondents: fbNonRespondents,
+          nonRespondentCount: fbNonRespondents.length,
+          responseRate: fbEnrolledStudents.length > 0 
+            ? `${Math.round((respondentNames.size / fbEnrolledStudents.length) * 100)}%`
+            : 'N/A',
+          responses: feedbackResponses.slice(0, 50), // Limit for response size
+        };
+        break;
+
       case 'send_message':
         // Navigate to the messaging page for this user
         const targetUserId = args.user_id;

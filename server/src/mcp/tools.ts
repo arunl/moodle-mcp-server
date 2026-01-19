@@ -704,6 +704,38 @@ Useful for tracking participation in introduction forums, Q&A forums, etc.`,
       required: ['forum_cmid'],
     },
   },
+  {
+    name: 'analyze_feedback',
+    description: `Analyze a Moodle feedback activity to see who has/hasn't responded.
+    
+Returns:
+- List of students who submitted responses (with timestamps)
+- List of students who haven't responded yet (non-respondents)
+- Total response count and response rate
+
+Useful for tracking completion of surveys, course evaluations, or any feedback activity.
+
+Example: analyze_feedback(feedback_cmid=2760576, course_id=56569)`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        feedback_cmid: {
+          type: 'number',
+          description: 'The feedback activity cmid (from mod/feedback/view.php?id=...).',
+        },
+        course_id: {
+          type: 'number',
+          description: 'The course ID to cross-reference with enrolled students and find non-respondents.',
+        },
+        exclude_users: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: Names to exclude from analysis (e.g., instructor names).',
+        },
+      },
+      required: ['feedback_cmid', 'course_id'],
+    },
+  },
   
   // === MESSAGING TOOLS ===
   {

@@ -1,318 +1,415 @@
-// Background service worker
-// Handles cookie extraction, session storage, and MCP server communication
-// Also handles two-way WebSocket communication with MCP server
+// Background service worker for Moodle MCP Bridge (Hosted Version)
+// VERSION 2.1.0 - If you see this in console, the correct extension is loaded!
+console.log('[MoodleMCP v2.1.0] Background script loaded - connecting to localhost:8080');
 
-// Import WebSocket client
-importScripts('websocket-client.js');
+// Server configuration - change for production
+// For local development, use localhost:8080
+const SERVER_URL = 'http://localhost:8080';
+const WS_URL = 'ws://localhost:8080/ws';
+console.log('[MoodleMCP] WebSocket URL:', WS_URL);
 
-// Debug log storage
-const MAX_LOG_ENTRIES = 50;
+let ws = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_DELAY = 5000;
 
-// Cookie names to look for (in order of preference)
-const MOODLE_COOKIE_NAMES = ['MoodleSessionprod', 'MoodleSession', 'MoodleSessiondev', 'MoodleSessiontest'];
-
-// MCP Server HTTP API (for session sync)
-const MCP_SERVER_URL = 'http://127.0.0.1:3847';
-let mcpServerConnected = false;
-
-async function debugLog(message, data = null) {
-  const timestamp = new Date().toISOString();
-  const logEntry = { timestamp, message, data };
-  
-  console.log(`[MoodleMCP ${timestamp}]`, message, data || '');
-  
-  try {
-    const result = await chrome.storage.local.get(['debugLogs']);
-    const logs = result.debugLogs || [];
-    logs.unshift(logEntry);
-    
-    // Keep only last N entries
-    while (logs.length > MAX_LOG_ENTRIES) {
-      logs.pop();
-    }
-    
-    await chrome.storage.local.set({ debugLogs: logs });
-  } catch (e) {
-    console.error('Failed to write debug log:', e);
-  }
+// Get stored auth tokens
+async function getTokens() {
+  // [AL] - access token for bridge to mcp server
+  // [AL] - how do you know its the correct access token. there is nothing identifying the bridge.
+  const result = await chrome.storage.local.get(['accessToken', 'refreshToken', 'user']);
+  return result;
 }
 
-// Store session data
-let sessionData = {
-  moodleUrl: null,
-  sessionCookie: null,
-  sesskey: null,
-  timestamp: null,
-  isValid: false
-};
-
-// Initialize on service worker start
-debugLog('Service worker started');
-
-// Get MoodleSession cookie - try multiple cookie names
-async function getMoodleCookie(url) {
-  try {
-    debugLog('Getting cookie for URL', url);
-    
-    const domain = new URL(url).hostname;
-    
-    // Get all cookies for this domain
-    const allCookies = await chrome.cookies.getAll({ domain: domain });
-    debugLog('All cookies found', allCookies.map(c => c.name));
-    
-    // Look for any Moodle session cookie
-    for (const cookieName of MOODLE_COOKIE_NAMES) {
-      const cookie = allCookies.find(c => c.name === cookieName);
-      if (cookie) {
-        debugLog('Found cookie', { name: cookieName, valuePreview: cookie.value.substring(0, 10) + '...' });
-        return cookie.value;
-      }
-    }
-    
-    // Also look for any cookie that starts with "MoodleSession"
-    const anyMoodleCookie = allCookies.find(c => c.name.startsWith('MoodleSession'));
-    if (anyMoodleCookie) {
-      debugLog('Found MoodleSession* cookie', { name: anyMoodleCookie.name, valuePreview: anyMoodleCookie.value.substring(0, 10) + '...' });
-      return anyMoodleCookie.value;
-    }
-    
-    debugLog('No Moodle session cookie found');
-    return null;
-  } catch (e) {
-    debugLog('Error getting cookie', { error: e.message });
-    return null;
-  }
+// Save auth tokens
+async function saveTokens(accessToken, refreshToken, user) {
+  await chrome.storage.local.set({ accessToken, refreshToken, user });
 }
 
-// Send credentials to MCP server
-async function syncToMcpServer(sessionInfo) {
+// Clear auth tokens
+async function clearTokens() {
+  await chrome.storage.local.remove(['accessToken', 'refreshToken', 'user']);
+}
+
+// Refresh the access token
+async function refreshAccessToken() {
+  const { refreshToken } = await getTokens();
+  if (!refreshToken) return null;
+
   try {
-    debugLog('Syncing to MCP server...', { url: MCP_SERVER_URL });
-    
-    const response = await fetch(`${MCP_SERVER_URL}/session`, {
+    const response = await fetch(`${SERVER_URL}/auth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        moodleUrl: sessionInfo.moodleUrl,
-        sessionCookie: sessionInfo.sessionCookie,
-        sesskey: sessionInfo.sesskey,
-        timestamp: sessionInfo.timestamp
-      })
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      }),
     });
-    
-    if (response.ok) {
-      const result = await response.json();
-      mcpServerConnected = true;
-      debugLog('MCP server sync successful', result);
-      
-      // Update badge to show connected
-      await chrome.action.setBadgeText({ text: '⚡' });
-      await chrome.action.setBadgeBackgroundColor({ color: '#2196F3' });
-      
-      return true;
-    } else {
-      const error = await response.text();
-      debugLog('MCP server sync failed', { status: response.status, error });
-      mcpServerConnected = false;
-      return false;
+
+    if (!response.ok) {
+      console.error('[Auth] Failed to refresh token');
+      await clearTokens();
+      return null;
     }
-  } catch (e) {
-    debugLog('MCP server not reachable', { error: e.message });
-    mcpServerConnected = false;
-    
-    // Show green badge if we have valid session but MCP not connected
-    if (sessionData.isValid) {
-      await chrome.action.setBadgeText({ text: '✓' });
-      await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
-    }
-    
-    return false;
+
+    const data = await response.json();
+    const { user } = await getTokens();
+    await saveTokens(data.access_token, refreshToken, user);
+    return data.access_token;
+  } catch (error) {
+    console.error('[Auth] Token refresh error:', error);
+    return null;
   }
 }
 
-// Check MCP server status
-async function checkMcpServerStatus() {
+// Connect to WebSocket server
+async function connectWebSocket() {
+  const { accessToken } = await getTokens();
+  
+  if (!accessToken) {
+    console.log('[WebSocket] No access token, not connecting');
+    return;
+  }
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    console.log('[WebSocket] Already connected');
+    return;
+  }
+
+  console.log('[WebSocket] Connecting to', WS_URL);
+  
   try {
-    const response = await fetch(`${MCP_SERVER_URL}/status`);
-    if (response.ok) {
-      const status = await response.json();
-      mcpServerConnected = true;
-      debugLog('MCP server status', status);
-      return status;
-    }
-  } catch (e) {
-    mcpServerConnected = false;
-    debugLog('MCP server status check failed', { error: e.message });
-  }
-  return null;
-}
+    ws = new WebSocket(WS_URL);
 
-// Update session data
-async function updateSessionData(data) {
-  debugLog('updateSessionData called', { url: data.moodleUrl, sesskey: data.sesskey });
-  
-  const sessionCookie = await getMoodleCookie(data.moodleUrl);
-  
-  if (sessionCookie && data.sesskey) {
-    sessionData = {
-      moodleUrl: data.moodleUrl,
-      sessionCookie: sessionCookie,
-      sesskey: data.sesskey,
-      timestamp: data.timestamp,
-      isValid: true
+    ws.onopen = () => {
+      console.log('[WebSocket] Connected, authenticating...');
+      reconnectAttempts = 0;
+      
+      // Send authentication
+      ws.send(JSON.stringify({
+        type: 'auth',
+        token: accessToken,
+      }));
     };
-    
-    // Store in chrome.storage for persistence
-    await chrome.storage.local.set({ moodleSession: sessionData });
-    debugLog('Session saved successfully', { 
-      url: data.moodleUrl, 
-      sesskey: data.sesskey,
-      cookieLength: sessionCookie.length 
-    });
-    
-    // Sync to MCP server (don't wait for it)
-    syncToMcpServer(sessionData);
-    
-    // Update badge to show we have a valid session
-    try {
-      await chrome.action.setBadgeText({ text: '✓' });
-      await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
-      debugLog('Badge updated');
-    } catch (e) {
-      debugLog('Badge update failed', e.message);
-    }
-  } else {
-    debugLog('Session update failed - missing data', { 
-      hasCookie: !!sessionCookie, 
-      hasSesskey: !!data.sesskey 
-    });
+
+    ws.onmessage = async (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        if (message.type === 'auth_success') {
+          console.log('[WebSocket] Authenticated as', message.email);
+          chrome.storage.local.set({ wsConnected: true });
+          return;
+        }
+        
+        if (message.type === 'auth_error') {
+          console.error('[WebSocket] Auth error:', message.error);
+          // Try to refresh token
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            ws.send(JSON.stringify({ type: 'auth', token: newToken }));
+          } else {
+            chrome.storage.local.set({ wsConnected: false });
+          }
+          return;
+        }
+        
+        if (message.type === 'pong') {
+          return;
+        }
+
+        // Handle browser commands
+        if (message.id && message.action) {
+          const response = await handleCommand(message);
+          ws.send(JSON.stringify(response));
+        }
+      } catch (error) {
+        console.error('[WebSocket] Message error:', error);
+      }
+    };
+
+    ws.onclose = () => {
+      console.log('[WebSocket] Disconnected');
+      chrome.storage.local.set({ wsConnected: false });
+      ws = null;
+      
+      // Attempt to reconnect
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        console.log(`[WebSocket] Reconnecting in ${RECONNECT_DELAY}ms (attempt ${reconnectAttempts})`);
+        setTimeout(connectWebSocket, RECONNECT_DELAY);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('[WebSocket] Error:', error);
+    };
+  } catch (error) {
+    console.error('[WebSocket] Connection error:', error);
   }
 }
 
-// Listen for messages from content script and popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  debugLog('Message received', { type: message.type, sender: sender.tab?.url });
+// Handle incoming commands from the server
+async function handleCommand(command) {
+  const { id, action, params } = command;
   
-  if (message.type === 'SESSION_UPDATE') {
-    updateSessionData(message.data)
-      .then(() => sendResponse({ success: true }))
-      .catch(e => {
-        debugLog('SESSION_UPDATE error', e.message);
-        sendResponse({ success: false, error: e.message });
-      });
-    return true; // Keep channel open for async response
-  } else if (message.type === 'GET_SESSION') {
-    // Load from storage first in case service worker restarted
-    chrome.storage.local.get(['moodleSession'], (result) => {
-      if (result.moodleSession) {
-        sessionData = result.moodleSession;
-      }
-      debugLog('GET_SESSION response', { isValid: sessionData.isValid });
-      sendResponse({ ...sessionData, mcpConnected: mcpServerConnected });
-    });
-    return true; // Keep channel open for async response
-  } else if (message.type === 'GET_MCP_STATUS') {
-    checkMcpServerStatus()
-      .then(status => sendResponse({ connected: mcpServerConnected, status }))
-      .catch(e => sendResponse({ connected: false, error: e.message }));
-    return true;
-  } else if (message.type === 'SYNC_TO_MCP') {
-    if (sessionData.isValid) {
-      syncToMcpServer(sessionData)
-        .then(success => sendResponse({ success }))
-        .catch(e => sendResponse({ success: false, error: e.message }));
-    } else {
-      sendResponse({ success: false, error: 'No valid session to sync' });
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs[0];
+    
+    if (!tab) {
+      return { id, success: false, error: 'No active tab' };
     }
-    return true;
-  } else if (message.type === 'GET_DEBUG_LOGS') {
-    chrome.storage.local.get(['debugLogs'], (result) => {
-      sendResponse(result.debugLogs || []);
+
+    switch (action) {
+      case 'navigate':
+        return await handleNavigate(id, params, tab);
+      case 'click':
+        return await handleClick(id, params, tab);
+      case 'type':
+        return await handleType(id, params, tab);
+      case 'extract':
+        return await handleExtract(id, params, tab);
+      case 'evaluate':
+        return await handleEvaluate(id, params, tab);
+      case 'wait':
+        return await handleWait(id, params, tab);
+      default:
+        return { id, success: false, error: `Unknown action: ${action}` };
+    }
+  } catch (error) {
+    return { id, success: false, error: error.message };
+  }
+}
+
+// Command handlers
+async function handleNavigate(id, params, tab) {
+  let url = params.url;
+  
+  // If relative URL, use Moodle base from current tab
+  if (url.startsWith('/')) {
+    const tabUrl = new URL(tab.url);
+    url = tabUrl.origin + url;
+  }
+  
+  await chrome.tabs.update(tab.id, { url });
+  
+  // Wait for page to load
+  await new Promise((resolve) => {
+    const listener = (tabId, changeInfo) => {
+      if (tabId === tab.id && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(resolve, 10000); // Timeout after 10s
+  });
+  
+  return { id, success: true, data: { url } };
+}
+
+async function handleClick(id, params, tab) {
+  const { selector, description } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (sel) => {
+      const element = document.querySelector(sel);
+      if (!element) {
+        return { success: false, error: `Element not found: ${sel}` };
+      }
+      element.click();
+      return { success: true };
+    },
+    args: [selector],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleType(id, params, tab) {
+  const { selector, text, clearFirst } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (sel, txt, clear) => {
+      const element = document.querySelector(sel);
+      if (!element) {
+        return { success: false, error: `Element not found: ${sel}` };
+      }
+      
+      if (clear) {
+        element.value = '';
+      }
+      
+      element.focus();
+      element.value = txt;
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      return { success: true };
+    },
+    args: [selector, text, clearFirst !== false],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtract(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const data = {
+        title: document.title,
+        url: window.location.href,
+        headings: [],
+        links: [],
+        text: '',
+      };
+      
+      // Extract headings
+      document.querySelectorAll('h1, h2, h3, h4').forEach((h) => {
+        data.headings.push({
+          level: parseInt(h.tagName[1]),
+          text: h.textContent.trim(),
+        });
+      });
+      
+      // Extract links
+      document.querySelectorAll('a[href]').forEach((a) => {
+        const text = a.textContent.trim();
+        if (text && !text.startsWith('http')) {
+          data.links.push({
+            text,
+            href: a.href,
+          });
+        }
+      });
+      
+      // Extract main content text
+      const main = document.querySelector('#region-main, main, .content, #content');
+      if (main) {
+        data.text = main.textContent.trim().substring(0, 5000);
+      }
+      
+      return { success: true, data };
+    },
+  });
+  
+  return { id, success: true, data: result[0].result.data };
+}
+
+async function handleEvaluate(id, params, tab) {
+  const { script } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (code) => {
+      try {
+        const fn = new Function('return ' + code);
+        return { success: true, data: fn() };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+    args: [script],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleWait(id, params, tab) {
+  const { selector, timeout = 10000 } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: async (sel, ms) => {
+      const start = Date.now();
+      while (Date.now() - start < ms) {
+        if (document.querySelector(sel)) {
+          return { success: true };
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return { success: false, error: `Timeout waiting for: ${sel}` };
+    },
+    args: [selector, timeout],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+// Ping server periodically to keep connection alive
+setInterval(() => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'ping' }));
+  }
+}, 30000);
+
+// Initialize on extension load
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('[MoodleMCP] Extension installed');
+  connectWebSocket();
+});
+
+// Try to connect when extension starts
+connectWebSocket();
+
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'getStatus') {
+    getTokens().then(({ user }) => {
+      sendResponse({
+        loggedIn: !!user,
+        user,
+        wsConnected: ws && ws.readyState === WebSocket.OPEN,
+      });
     });
     return true;
-  } else if (message.type === 'CLEAR_DEBUG_LOGS') {
-    chrome.storage.local.set({ debugLogs: [] }, () => {
+  }
+  
+  if (message.action === 'login') {
+    // Open login popup
+    chrome.windows.create({
+      url: `${SERVER_URL}/auth/google?extension=true`,
+      type: 'popup',
+      width: 500,
+      height: 600,
+    });
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  if (message.action === 'logout') {
+    clearTokens().then(() => {
+      if (ws) ws.close();
       sendResponse({ success: true });
     });
     return true;
-  } else if (message.type === 'GET_WS_STATUS') {
-    // Get WebSocket connection status
-    const status = typeof getWsStatus === 'function' ? getWsStatus() : { connected: false };
-    sendResponse(status);
-    return true;
-  } else if (message.type === 'RECONNECT_WS') {
-    // Manually trigger WebSocket reconnection
-    if (typeof connectWebSocket === 'function') {
+  }
+  
+  if (message.action === 'saveTokens') {
+    saveTokens(message.accessToken, message.refreshToken, message.user).then(() => {
       connectWebSocket();
       sendResponse({ success: true });
-    } else {
-      sendResponse({ success: false, error: 'WebSocket client not loaded' });
-    }
+    });
+    return true;
+  }
+  
+  if (message.action === 'reconnect') {
+    connectWebSocket();
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  if (message.action === 'devLogin') {
+    // Dev login with provided token
+    console.log('[MoodleMCP] dev login with token:', message.token);
+    saveTokens(message.token, null, message.user).then(() => {
+      connectWebSocket();
+      sendResponse({ success: true });
+    });
     return true;
   }
 });
-
-// Listen for cookie changes - watch for any MoodleSession* cookie
-chrome.cookies.onChanged.addListener(async (changeInfo) => {
-  if (changeInfo.cookie.name.startsWith('MoodleSession')) {
-    debugLog('Moodle cookie changed', { 
-      name: changeInfo.cookie.name,
-      removed: changeInfo.removed, 
-      cause: changeInfo.cause,
-      domain: changeInfo.cookie.domain
-    });
-    
-    if (changeInfo.removed) {
-      // Cookie was removed (logout)
-      sessionData.isValid = false;
-      sessionData.sessionCookie = null;
-      await chrome.storage.local.set({ moodleSession: sessionData });
-      chrome.action.setBadgeText({ text: '' });
-      debugLog('Session invalidated - cookie removed');
-    } else {
-      // Cookie was updated - also update our stored session
-      sessionData.sessionCookie = changeInfo.cookie.value;
-      sessionData.timestamp = Date.now();
-      if (sessionData.sesskey) {
-        sessionData.isValid = true;
-      }
-      await chrome.storage.local.set({ moodleSession: sessionData });
-      debugLog('Session cookie updated from change listener');
-    }
-  }
-});
-
-// Load stored session on startup and sync to MCP
-chrome.storage.local.get(['moodleSession'], async (result) => {
-  debugLog('Loading stored session', result.moodleSession ? 'Found' : 'Not found');
-  if (result.moodleSession) {
-    sessionData = result.moodleSession;
-    if (sessionData.isValid) {
-      chrome.action.setBadgeText({ text: '✓' });
-      chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
-      debugLog('Restored valid session from storage');
-      
-      // Try to sync to MCP server on startup
-      await syncToMcpServer(sessionData);
-    }
-  }
-});
-
-// Periodic sync check (every 5 minutes)
-setInterval(async () => {
-  if (sessionData.isValid) {
-    // Refresh the session cookie in case it changed
-    const freshCookie = await getMoodleCookie(sessionData.moodleUrl);
-    if (freshCookie && freshCookie !== sessionData.sessionCookie) {
-      sessionData.sessionCookie = freshCookie;
-      sessionData.timestamp = Date.now();
-      await chrome.storage.local.set({ moodleSession: sessionData });
-      debugLog('Session cookie refreshed');
-    }
-    
-    // Sync to MCP server
-    await syncToMcpServer(sessionData);
-  }
-}, 5 * 60 * 1000); // 5 minutes
-
-debugLog('Service worker initialization complete');

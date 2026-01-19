@@ -66,6 +66,22 @@ tools:
   - name: get_enrolled_users
     description: List enrolled users (instructors only)
 
+  # Macro tools (v0)
+  - name: open_course
+    description: Open a Moodle course home page by course id
+  - name: open_participants
+    description: Open the Participants page for a course
+  - name: list_participants
+    description: Return a structured list of participants enrolled in a course
+  - name: enable_editing
+    description: Enable course editing mode
+  - name: list_addable_sections
+    description: List section ids where "Add an activity or resource" is available
+  - name: forum_list_discussions
+    description: List forum discussions (discussion id, title, url)
+  - name: book_export_word
+    description: Open the Moodle Book export-to-Word flow
+
 # Example prompts
 examples:
   - prompt: "Show me my Moodle courses"
@@ -84,4 +100,4 @@ requirements:
   - API key from moodle-mcp.example.com
 
 # Version
-version: "2.0.0"
+version: "2.1.0"

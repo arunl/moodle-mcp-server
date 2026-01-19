@@ -201,6 +201,10 @@ async function handleCommand(command) {
         return await handleExtractAssignmentDetails(id, params, tab);
       case 'extract_submissions':
         return await handleExtractSubmissions(id, params, tab);
+      case 'extract_activities':
+        return await handleExtractActivities(id, params, tab);
+      case 'set_activity_date':
+        return await handleSetActivityDate(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -974,6 +978,193 @@ async function handleExtractSubmissions(id, params, tab) {
       };
     },
     args: [filter || 'all'],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+// Extract all activities from a course page
+async function handleExtractActivities(id, params, tab) {
+  const namePattern = params.namePattern || null;
+  const activityType = params.activityType || null;
+  const sectionNum = params.sectionNum !== undefined ? params.sectionNum : null;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (namePattern, activityType, sectionNum) => {
+      const activities = [];
+      
+      // Find all activity links on the course page
+      const activitySelectors = [
+        'li.activity a.aalink',
+        'li.activity a.activityname',
+        '.activity-item a.aalink',
+        '.activity-item a.activityname',
+        '[data-activityname] a',
+      ];
+      
+      const allLinks = [];
+      activitySelectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(link => {
+          if (!allLinks.includes(link)) {
+            allLinks.push(link);
+          }
+        });
+      });
+      
+      allLinks.forEach((link) => {
+        const href = link.getAttribute('href') || '';
+        const name = link.textContent?.trim() || '';
+        
+        // Extract activity type from URL (mod/assign/view.php -> assign)
+        const typeMatch = href.match(/mod\/([^/]+)\//);
+        const type = typeMatch ? typeMatch[1] : null;
+        
+        // Extract activity ID from URL
+        const idMatch = href.match(/id=(\d+)/);
+        const activityId = idMatch ? parseInt(idMatch[1]) : null;
+        
+        // Find the section this activity is in
+        const section = link.closest('.section, [data-sectionid]');
+        let sectionNumber = null;
+        let sectionName = null;
+        
+        if (section) {
+          const sectionIdMatch = section.id?.match(/section-(\d+)/) || 
+                                  section.dataset?.sectionid?.match(/(\d+)/);
+          sectionNumber = sectionIdMatch ? parseInt(sectionIdMatch[1]) : null;
+          
+          const sectionNameEl = section.querySelector('.sectionname, .section-title');
+          sectionName = sectionNameEl ? sectionNameEl.textContent.trim() : null;
+        }
+        
+        // Apply filters
+        if (activityType && type !== activityType) {
+          return;
+        }
+        
+        if (namePattern && !name.toLowerCase().includes(namePattern.toLowerCase())) {
+          return;
+        }
+        
+        if (sectionNum !== null && sectionNumber !== sectionNum) {
+          return;
+        }
+        
+        if (activityId && type) {
+          activities.push({
+            id: activityId,
+            name,
+            type,
+            url: href,
+            sectionNumber,
+            sectionName,
+            editUrl: `/course/modedit.php?update=${activityId}`,
+          });
+        }
+      });
+      
+      // Deduplicate by ID
+      const uniqueActivities = [];
+      const seen = new Set();
+      activities.forEach(a => {
+        if (!seen.has(a.id)) {
+          seen.add(a.id);
+          uniqueActivities.push(a);
+        }
+      });
+      
+      return {
+        success: true,
+        data: {
+          activities: uniqueActivities,
+          count: uniqueActivities.length,
+          filters: { namePattern, activityType, sectionNum },
+          url: window.location.href,
+        },
+      };
+    },
+    args: [namePattern, activityType, sectionNum],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+// Set a date field on an activity edit form
+async function handleSetActivityDate(id, params, tab) {
+  const { fieldName, date, enabled } = params;
+  const targetDate = new Date(date);
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (fieldName, targetDateISO, enabled) => {
+      const targetDate = new Date(targetDateISO);
+      
+      // Common date field prefixes in Moodle
+      const fieldPrefixes = [fieldName, `id_${fieldName}`];
+      
+      let foundFields = false;
+      
+      for (const prefix of fieldPrefixes) {
+        // Try to find and enable the checkbox if it exists
+        const enabledCheckbox = document.querySelector(`#${prefix}_enabled, #id_${prefix}_enabled, [name="${prefix}[enabled]"]`);
+        if (enabledCheckbox) {
+          if (enabled !== false && !enabledCheckbox.checked) {
+            enabledCheckbox.click();
+          } else if (enabled === false && enabledCheckbox.checked) {
+            enabledCheckbox.click();
+            return { success: true, message: `Disabled ${fieldName}` };
+          }
+        }
+        
+        // Find the date fields - try both select dropdowns and newer date inputs
+        const dayField = document.querySelector(`#${prefix}_day, #id_${prefix}_day, [name="${prefix}[day]"]`);
+        const monthField = document.querySelector(`#${prefix}_month, #id_${prefix}_month, [name="${prefix}[month]"]`);
+        const yearField = document.querySelector(`#${prefix}_year, #id_${prefix}_year, [name="${prefix}[year]"]`);
+        const hourField = document.querySelector(`#${prefix}_hour, #id_${prefix}_hour, [name="${prefix}[hour]"]`);
+        const minuteField = document.querySelector(`#${prefix}_minute, #id_${prefix}_minute, [name="${prefix}[minute]"]`);
+        
+        if (dayField && monthField && yearField) {
+          foundFields = true;
+          
+          // Set each field value
+          const setFieldValue = (field, value) => {
+            if (field.tagName === 'SELECT') {
+              field.value = String(value);
+            } else {
+              field.value = String(value);
+            }
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          
+          setFieldValue(dayField, targetDate.getDate());
+          setFieldValue(monthField, targetDate.getMonth() + 1);
+          setFieldValue(yearField, targetDate.getFullYear());
+          
+          if (hourField) {
+            setFieldValue(hourField, targetDate.getHours());
+          }
+          if (minuteField) {
+            setFieldValue(minuteField, targetDate.getMinutes());
+          }
+          
+          return {
+            success: true,
+            message: `Set ${fieldName} to ${targetDate.toISOString()}`,
+            fieldName,
+            date: targetDate.toISOString(),
+          };
+        }
+      }
+      
+      if (!foundFields) {
+        return {
+          success: false,
+          error: `Date field '${fieldName}' not found on this form. Available fields might include: duedate, timeopen, timeclose, cutoffdate, allowsubmissionsfromdate`,
+        };
+      }
+    },
+    args: [fieldName, targetDate.toISOString(), enabled],
   });
   
   return { id, ...result[0].result };

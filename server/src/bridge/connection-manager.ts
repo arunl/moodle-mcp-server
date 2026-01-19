@@ -179,6 +179,8 @@ export interface BrowserCommand {
     | 'extract_forum_discussions' | 'extract_course_sections'
     // Assignment extraction actions
     | 'extract_assignments' | 'extract_assignment_details' | 'extract_submissions'
+    // Generic activity actions
+    | 'extract_activities' | 'set_activity_date'
     // Editor and form actions
     | 'setEditor' | 'set_moodle_date'
     // Session/auth actions

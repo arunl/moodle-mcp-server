@@ -509,6 +509,109 @@ Requires instructor access to the course.`,
       required: ['course_id'],
     },
   },
+
+  // -----------------------------
+  // Generic Activity Tools
+  // -----------------------------
+  {
+    name: 'find_activity',
+    description: `Search for activities in a course by name pattern.
+    
+Returns matching activities with their IDs, names, types, section, and URLs.
+Useful for finding any activity (assignment, feedback, quiz, forum, etc.) before editing.
+
+Examples:
+- find_activity(course_id=56569, name_pattern="Tinder")
+- find_activity(course_id=56569, activity_type="feedback")
+- find_activity(course_id=56569, name_pattern="Quiz", activity_type="quiz")`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: {
+          type: 'number',
+          description: 'The Moodle course ID.',
+        },
+        name_pattern: {
+          type: 'string',
+          description: 'Optional text to search for in activity names (case-insensitive).',
+        },
+        activity_type: {
+          type: 'string',
+          description: 'Optional activity type filter: assign, feedback, quiz, forum, book, page, url, resource, etc.',
+        },
+        section_num: {
+          type: 'number',
+          description: 'Optional section number to limit search (0 = General, 1 = Topic 1, etc.).',
+        },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'edit_activity',
+    description: `Open the edit settings page for any activity type.
+    
+Works for assignments, feedback, quizzes, forums, books, pages, URLs, etc.
+After calling this, you can use click_element, type_text, and set_activity_date to modify settings.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        activity_id: {
+          type: 'number',
+          description: 'The activity cmid (from find_activity or activity URLs like mod/assign/view.php?id=...).',
+        },
+      },
+      required: ['activity_id'],
+    },
+  },
+  {
+    name: 'set_activity_date',
+    description: `Set a date field on a Moodle activity edit form.
+    
+Automatically handles different date field naming conventions across activity types:
+- Assignments: duedate, allowsubmissionsfromdate, cutoffdate
+- Feedback: timeopen, timeclose
+- Quizzes: timeopen, timeclose
+- Forums: duedate
+
+Also handles enabling the date checkbox if needed.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        field_name: {
+          type: 'string',
+          description: 'The date field name: duedate, timeopen, timeclose, cutoffdate, allowsubmissionsfromdate, etc.',
+        },
+        date: {
+          type: 'string',
+          description: 'The date/time in ISO 8601 format (e.g., "2026-01-19T23:55:00").',
+        },
+        enabled: {
+          type: 'boolean',
+          description: 'Whether to enable the date (default: true). Set to false to disable/clear the date.',
+          default: true,
+        },
+      },
+      required: ['field_name', 'date'],
+    },
+  },
+  {
+    name: 'save_activity',
+    description: `Save the current activity edit form.
+    
+Clicks the "Save and return to course" or "Save and display" button.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        return_to_course: {
+          type: 'boolean',
+          description: 'If true, clicks "Save and return to course". If false, clicks "Save and display". Default: true.',
+          default: true,
+        },
+      },
+      required: [],
+    },
+  },
 ];
 
 // Generate unique command ID

@@ -464,6 +464,199 @@ async function handleToolCall(
         };
         break;
 
+      // -----------------------------
+      // Assignment CRUD operations
+      // -----------------------------
+      case 'list_assignments':
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/assign/index.php?id=${args.course_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 5000 });
+        result = await sendBrowserCommand(userId, 'extract_assignments', {});
+        break;
+
+      case 'get_assignment':
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/assign/view.php?id=${args.assignment_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.activity-header, .assign-submission', timeout: 5000 });
+        result = await sendBrowserCommand(userId, 'extract_assignment_details', {});
+        break;
+
+      case 'get_assignment_submissions':
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/assign/view.php?id=${args.assignment_id}&action=grading`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 5000 });
+        result = await sendBrowserCommand(userId, 'extract_submissions', { filter: args.filter || 'all' });
+        break;
+
+      case 'create_assignment':
+        // Navigate to add assignment form
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/modedit.php?add=assign&course=${args.course_id}&section=${args.section_num}&return=0`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
+        
+        // Fill in assignment name
+        await sendBrowserCommand(userId, 'type', {
+          selector: '#id_name',
+          text: args.name,
+          clearFirst: true,
+        });
+        
+        // Fill in description if provided
+        if (args.description) {
+          await sendBrowserCommand(userId, 'setEditor', {
+            htmlContent: args.description,
+            editorId: 'id_introeditor',
+          });
+        }
+        
+        // Set due date if provided - use the dedicated handler for Moodle date fields
+        if (args.due_date) {
+          await sendBrowserCommand(userId, 'set_moodle_date', {
+            fieldPrefix: 'id_duedate',
+            dateString: args.due_date,
+            enableCheckbox: true,
+          });
+        }
+        
+        // Set max grade if provided - need to expand Grade section first
+        if (args.max_grade !== undefined) {
+          // Click to expand Grade section if collapsed
+          await sendBrowserCommand(userId, 'click', {
+            selector: '#id_gradeheader .fheader, a[data-toggle="collapse"][href="#id_gradeheader"], #id_grade_header',
+          }).catch(() => {}); // Ignore if already expanded
+          
+          // Small delay to let section expand
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Set max grade - Moodle uses a select dropdown for grade type and text for points
+          await sendBrowserCommand(userId, 'type', {
+            selector: '#id_grade_modgrade_point, #id_grade\\[modgrade_point\\], input[name="grade[modgrade_point]"]',
+            text: String(args.max_grade),
+            clearFirst: true,
+          });
+        }
+        
+        // Submit the form
+        await sendBrowserCommand(userId, 'click', {
+          selector: '#id_submitbutton, input[type="submit"][value="Save and return to course"]',
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 10000 });
+        result = { success: true, name: args.name, courseId: args.course_id, maxGrade: args.max_grade };
+        break;
+
+      case 'edit_assignment':
+        // Navigate to edit form
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/modedit.php?update=${args.assignment_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
+        
+        // Update name if provided
+        if (args.name) {
+          await sendBrowserCommand(userId, 'type', {
+            selector: '#id_name',
+            text: args.name,
+            clearFirst: true,
+          });
+        }
+        
+        // Update description if provided
+        if (args.description) {
+          await sendBrowserCommand(userId, 'setEditor', {
+            htmlContent: args.description,
+            editorId: 'id_introeditor',
+          });
+        }
+        
+        // Update due date if provided - use dedicated handler
+        if (args.due_date) {
+          await sendBrowserCommand(userId, 'set_moodle_date', {
+            fieldPrefix: 'id_duedate',
+            dateString: args.due_date,
+            enableCheckbox: true,
+          });
+        }
+        
+        // Update max grade if provided
+        if (args.max_grade !== undefined) {
+          // Click to expand Grade section if collapsed
+          await sendBrowserCommand(userId, 'click', {
+            selector: '#id_gradeheader .fheader, a[data-toggle="collapse"][href="#id_gradeheader"], #id_grade_header',
+          }).catch(() => {});
+          
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          await sendBrowserCommand(userId, 'type', {
+            selector: '#id_grade_modgrade_point, #id_grade\\[modgrade_point\\], input[name="grade[modgrade_point]"]',
+            text: String(args.max_grade),
+            clearFirst: true,
+          });
+        }
+        
+        // Submit the form
+        await sendBrowserCommand(userId, 'click', {
+          selector: '#id_submitbutton, input[type="submit"][value="Save and return to course"]',
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 10000 });
+        result = { success: true, assignmentId: args.assignment_id };
+        break;
+
+      case 'delete_assignment':
+        if (!args.confirm) {
+          result = { error: 'Deletion requires confirm=true to prevent accidental data loss.' };
+          break;
+        }
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/mod.php?delete=${args.assignment_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
+        
+        // Click confirm delete button
+        await sendBrowserCommand(userId, 'click', {
+          selector: 'button[type="submit"], input[type="submit"]',
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        result = { success: true, assignmentId: args.assignment_id, deleted: true };
+        break;
+
+      case 'extend_assignment_deadline':
+        // Navigate to assignment grading with user filter
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/assign/view.php?id=${args.assignment_id}&action=grading`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 5000 });
+        
+        // Click on the specific user's extension option
+        // This varies by Moodle version - may need to click user row then extension
+        await sendBrowserCommand(userId, 'click', {
+          selector: `[data-userid="${args.user_id}"] [data-action="grantextension"], tr[data-userid="${args.user_id}"] .action-extension`,
+        });
+        
+        // Set new due date
+        const extDate = new Date(args.new_due_date);
+        await sendBrowserCommand(userId, 'type', {
+          selector: '#id_extensionduedate_day, [name="extensionduedate[day]"]',
+          text: String(extDate.getDate()),
+        });
+        await sendBrowserCommand(userId, 'type', {
+          selector: '#id_extensionduedate_month, [name="extensionduedate[month]"]',
+          text: String(extDate.getMonth() + 1),
+        });
+        await sendBrowserCommand(userId, 'type', {
+          selector: '#id_extensionduedate_year, [name="extensionduedate[year]"]',
+          text: String(extDate.getFullYear()),
+        });
+        
+        await sendBrowserCommand(userId, 'click', {
+          selector: 'input[type="submit"]',
+        });
+        result = { success: true, assignmentId: args.assignment_id, userId: args.user_id, newDueDate: args.new_due_date };
+        break;
+
       default:
         return {
           jsonrpc: '2.0',

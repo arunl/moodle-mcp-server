@@ -177,8 +177,10 @@ export interface BrowserCommand {
     // Moodle-specific extraction actions (CSP-safe, no eval)
     | 'extract_participants' | 'extract_editing_status' | 'extract_addable_sections' 
     | 'extract_forum_discussions' | 'extract_course_sections'
-    // Editor actions
-    | 'setEditor';
+    // Assignment extraction actions
+    | 'extract_assignments' | 'extract_assignment_details' | 'extract_submissions'
+    // Editor and form actions
+    | 'setEditor' | 'set_moodle_date';
   params: Record<string, unknown>;
 }
 

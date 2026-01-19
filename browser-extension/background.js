@@ -583,8 +583,11 @@ async function handleSetEditor(id, params, tab) {
       if (targetEditorId) {
         textarea = document.getElementById(targetEditorId);
       } else {
-        // Find first plausible editor
-        textarea = document.querySelector('textarea[id*="editor"], textarea[id*="summary"], textarea[name*="summary"]');
+        // Find first plausible editor - include message textareas for forums
+        textarea = document.querySelector(
+          'textarea[id*="editor"], textarea[id*="summary"], textarea[name*="summary"], ' +
+          'textarea[id*="message"], textarea[name*="message"], textarea[id*="intro"]'
+        );
       }
       
       if (!textarea) {
@@ -598,12 +601,18 @@ async function handleSetEditor(id, params, tab) {
       
       // Try to update the contenteditable div if using Atto/TinyMCE
       const editorId = textarea.id;
-      const editableDiv = document.querySelector(`#${editorId}editable, [data-region="text"] [contenteditable="true"]`);
+      // Look for Atto editor's editable div
+      const editableDiv = document.querySelector(
+        `#${editorId}editable, ` +
+        `[data-region="text"] [contenteditable="true"], ` +
+        `.editor_atto_content[contenteditable="true"]`
+      );
       if (editableDiv) {
         editableDiv.innerHTML = content;
+        editableDiv.dispatchEvent(new Event('input', { bubbles: true }));
       }
       
-      return { success: true };
+      return { success: true, textareaId: textarea.id, editableDivFound: !!editableDiv };
     },
     args: [htmlContent, editorId],
   });

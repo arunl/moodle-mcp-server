@@ -208,6 +208,7 @@ Example: "return document.querySelectorAll('.activity').length"`,
       properties: {
         course_id: { type: 'number', description: 'The Moodle course ID.' },
         page: { type: 'number', description: 'Participants pagination page (0-based). Defaults to 0.', default: 0 },
+        perpage: { type: 'number', description: 'Number of participants per page. Use 5000 to get all participants at once. Defaults to 5000.', default: 5000 },
       },
       required: ['course_id'],
     },

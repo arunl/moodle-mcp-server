@@ -273,13 +273,15 @@ async function handleToolCall(
         break;
 
       case 'list_participants':
+        const perpage = args.perpage ?? 5000; // Default to 5000 to get all participants
+        // Include treset=1 to clear any saved filters that might limit results
         await sendBrowserCommand(userId, 'navigate', {
-          url: `/user/index.php?id=${args.course_id}&page=${args.page ?? 0}`,
+          url: `/user/index.php?id=${args.course_id}&perpage=${perpage}&page=${args.page ?? 0}&treset=1`,
         });
         await sendBrowserCommand(userId, 'wait', { selector: 'table#participants, table.generaltable', timeout: 10000 });
         // Use CSP-safe dedicated handler instead of evaluate
         result = await sendBrowserCommand(userId, 'extract_participants', {});
-        result = { page: args.page ?? 0, ...result };
+        result = { page: args.page ?? 0, perpage, ...result };
         break;
 
       case 'enable_editing':
@@ -870,9 +872,9 @@ async function handleToolCall(
         let nonParticipants: string[] = [];
         
         if (args.course_id) {
-          // Navigate to participants page
+          // Navigate to participants page (include treset=1 to clear any saved filters)
           await sendBrowserCommand(userId, 'navigate', {
-            url: `/user/index.php?id=${args.course_id}&perpage=5000`,
+            url: `/user/index.php?id=${args.course_id}&perpage=5000&treset=1`,
           });
           await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
           

@@ -152,10 +152,12 @@ async function connectWebSocket() {
 // Handle incoming commands from the server
 async function handleCommand(command) {
   const { id, action, params } = command;
+  console.log(`[MoodleMCP] Command received: ${action}`, { id, params });
   
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const tab = tabs[0];
+    console.log(`[MoodleMCP] Active tab:`, tab?.url);
     
     if (!tab) {
       return { id, success: false, error: 'No active tab' };
@@ -182,7 +184,9 @@ async function handleCommand(command) {
       case 'extract_addable_sections':
         return await handleExtractAddableSections(id, params, tab);
       case 'extract_forum_discussions':
-        return await handleExtractForumDiscussions(id, params, tab);
+        const forumResult = await handleExtractForumDiscussions(id, params, tab);
+        console.log('[MoodleMCP] extract_forum_discussions result:', forumResult);
+        return forumResult;
       case 'extract_course_sections':
         return await handleExtractCourseSections(id, params, tab);
       case 'setEditor':
@@ -384,29 +388,76 @@ async function handleExtractParticipants(id, params, tab) {
     target: { tabId: tab.id },
     func: () => {
       const participants = [];
-      // Try the participants table
-      const rows = document.querySelectorAll('table#participants tbody tr, table.generaltable tbody tr');
       
-      rows.forEach((row) => {
-        const nameLink = row.querySelector('a[href*="/user/view.php"]');
-        const roleCell = row.querySelector('td[data-column="roles"], td:nth-child(3)');
-        const emailCell = row.querySelector('td[data-column="email"]');
+      // Try multiple table selectors for the participants/enrolled users page
+      const tables = document.querySelectorAll('table#participants, table.generaltable, table[class*="participant"], table');
+      let targetTable = null;
+      
+      // Find the table that has user links
+      for (const table of tables) {
+        if (table.querySelector('a[href*="/user/view.php"]')) {
+          targetTable = table;
+          break;
+        }
+      }
+      
+      if (targetTable) {
+        const rows = targetTable.querySelectorAll('tbody tr');
         
-        if (nameLink) {
+        rows.forEach((row) => {
+          const nameLink = row.querySelector('a[href*="/user/view.php"]');
+          if (!nameLink) return;
+          
           const href = nameLink.getAttribute('href');
           const idMatch = href.match(/id=(\d+)/);
+          
+          // Get name - may have avatar initials prefixed, strip them
+          let name = nameLink.textContent.trim();
+          // Pattern: 2-3 uppercase letters followed by a name (e.g., "TATyler Addeo")
+          // But don't strip if the entire name is short uppercase (actual initials)
+          const initialsMatch = name.match(/^([A-Z]{2,3})([A-Z][a-z].*)$/);
+          if (initialsMatch) {
+            name = initialsMatch[2]; // Use the part after initials
+          }
+          
+          const cells = row.querySelectorAll('td');
+          
+          // Find role - look for cell containing Student/Teacher keywords
+          let role = null;
+          for (const cell of cells) {
+            const text = cell.textContent.trim();
+            // Skip cells with usernames (c followed by numbers)
+            if (text.match(/^c\d+$/)) continue;
+            // Skip cells with group info or dates
+            if (text.includes('No groups') || text.match(/\d+\s*(days?|hours?|mins?|secs?)/)) continue;
+            // Check if this looks like a role
+            if (text.match(/Student|Teacher|Manager|Creator/i)) {
+              role = text.split(/[\n\s]/)[0].trim(); // Get first word
+              break;
+            }
+          }
+          
+          // Get username - look for c followed by 7-8 digits
+          let username = null;
+          for (const cell of cells) {
+            const text = cell.textContent.trim();
+            if (text.match(/^c\d{7,8}$/)) {
+              username = text;
+              break;
+            }
+          }
+          
           participants.push({
-            name: nameLink.textContent.trim(),
+            name: name,
             userId: idMatch ? parseInt(idMatch[1]) : null,
             profileUrl: nameLink.href,
-            role: roleCell ? roleCell.textContent.trim() : null,
-            email: emailCell ? emailCell.textContent.trim() : null,
+            role: role,
+            username: username,
           });
-        }
-      });
+        });
+      }
       
-      // Get total count if available
-      const countEl = document.querySelector('.userlist-count, [data-region="participants-count"]');
+      // Get total count from page text
       const totalMatch = document.body.textContent.match(/(\d+)\s*participants?\s*found/i);
       
       return {
@@ -415,6 +466,7 @@ async function handleExtractParticipants(id, params, tab) {
           participants,
           total: totalMatch ? parseInt(totalMatch[1]) : participants.length,
           url: window.location.href,
+          tableFound: !!targetTable,
         },
       };
     },
@@ -1150,14 +1202,23 @@ async function handleExtractForumDiscussions(id, params, tab) {
       const discussions = [];
       const seenIds = new Set();
       
+      // Debug info
+      const debug = {
+        url: window.location.href,
+        totalLinks: 0,
+        discussLinks: 0,
+      };
+      
       // Find ALL links on the page and filter for discussion links
       const allLinks = Array.from(document.querySelectorAll('a'));
+      debug.totalLinks = allLinks.length;
       
       allLinks.forEach((link) => {
-        const href = link.href || '';
+        const href = link.href || link.getAttribute('href') || '';
         
         // Check if this is a discussion link
         if (!href.includes('discuss.php')) return;
+        debug.discussLinks++;
         if (!href.includes('d=')) return;
         
         // Skip reply/parent links
@@ -1188,42 +1249,85 @@ async function handleExtractForumDiscussions(id, params, tab) {
         let replyCount = 0;
         
         if (row) {
-          // Look for author info - user profile links
-          const authorLinks = row.querySelectorAll('a[href*="user/view.php"], a[href*="user/profile.php"]');
-          if (authorLinks.length > 0) {
-            author = authorLinks[0].textContent.trim();
-          }
+          // For table-based forums, look at cells by position
+          const cells = row.querySelectorAll('td, th');
           
-          // Look for reply count in various places
-          // Try specific selectors first
-          const replySelectors = [
-            '.replies-count',
-            '[data-region="replies"]',
-            'td.replies',
-          ];
-          
-          for (const sel of replySelectors) {
-            const el = row.querySelector(sel);
-            if (el) {
-              const num = parseInt(el.textContent.trim());
-              if (!isNaN(num)) {
-                replyCount = num;
+          if (cells.length >= 4) {
+            // Find which cell contains the discussion link to determine offset
+            let titleCellIndex = -1;
+            for (let i = 0; i < cells.length; i++) {
+              if (cells[i].querySelector('a[href*="discuss.php"]')) {
+                titleCellIndex = i;
                 break;
               }
             }
-          }
-          
-          // If no specific selector worked, look for standalone numbers in cells
-          if (replyCount === 0) {
-            const cells = row.querySelectorAll('td');
-            for (let i = cells.length - 1; i >= 0; i--) {
+            
+            // Table structure varies, but typically:
+            // [Star] | Discussion | Started by | Last post | Replies | Subscribe
+            // OR: Discussion | Started by | Last post | Replies | Subscribe
+            // The "Started by" cell is always the next one after the title
+            const startedByIndex = titleCellIndex + 1;
+            
+            // Extract author from "Started by" cell
+            if (startedByIndex < cells.length) {
+              const startedByCell = cells[startedByIndex];
+              // Look for user profile link first
+              const authorLink = startedByCell.querySelector('a[href*="/user/"]');
+              if (authorLink) {
+                author = authorLink.textContent.trim();
+              } else {
+                // Just get the first line of text (the name, before date)
+                const text = startedByCell.textContent.trim();
+                const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+                if (lines.length > 0 && !lines[0].match(/^\d{1,2}\s+\w{3}\s+\d{4}$/)) {
+                  author = lines[0];
+                }
+              }
+            }
+            
+            // Find the "Replies" cell - usually contains just a number
+            // It's typically 2-3 cells after "Started by"
+            for (let i = startedByIndex + 2; i < cells.length; i++) {
               const text = cells[i].textContent.trim();
-              // Only accept pure numbers (not dates or other content)
+              // Look for cell with just a number (reply count)
               if (/^\d+$/.test(text)) {
                 const num = parseInt(text);
-                if (num < 1000) {
+                if (num < 1000) { // Sanity check - reply counts shouldn't be huge
                   replyCount = num;
                   break;
+                }
+              }
+            }
+          } else {
+            // Fallback: Look for author info via user profile links
+            const authorLinks = row.querySelectorAll('a[href*="user/view.php"], a[href*="user/profile.php"]');
+            if (authorLinks.length > 0) {
+              author = authorLinks[0].textContent.trim();
+            }
+            
+            // Look for reply count in various places
+            const replySelectors = ['.replies-count', '[data-region="replies"]', 'td.replies'];
+            for (const sel of replySelectors) {
+              const el = row.querySelector(sel);
+              if (el) {
+                const num = parseInt(el.textContent.trim());
+                if (!isNaN(num)) {
+                  replyCount = num;
+                  break;
+                }
+              }
+            }
+            
+            // If no specific selector worked, look for standalone numbers in cells
+            if (replyCount === 0) {
+              for (let i = cells.length - 1; i >= 0; i--) {
+                const text = cells[i].textContent.trim();
+                if (/^\d+$/.test(text)) {
+                  const num = parseInt(text);
+                  if (num < 1000) {
+                    replyCount = num;
+                    break;
+                  }
                 }
               }
             }
@@ -1248,6 +1352,7 @@ async function handleExtractForumDiscussions(id, params, tab) {
           discussions,
           count: discussions.length,
           url: window.location.href,
+          debug,
         },
       };
     },

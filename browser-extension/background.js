@@ -1,6 +1,6 @@
 // Background service worker for Moodle MCP Bridge (Hosted Version)
-// VERSION 2.2.0 - Added dedicated Moodle extraction handlers (CSP-safe)
-console.log('[MoodleMCP v2.2.0] Background script loaded - connecting to localhost:8080');
+// VERSION 2.3.0 - Using ISOLATED world to bypass page CSP for evaluate
+console.log('[MoodleMCP v2.3.0] Background script loaded - connecting to localhost:8080');
 
 // Server configuration - change for production
 // For local development, use localhost:8080
@@ -312,8 +312,10 @@ async function handleExtract(id, params, tab) {
 async function handleEvaluate(id, params, tab) {
   const { script } = params;
   
+  // Use ISOLATED world to bypass page's CSP while still accessing DOM
   const result = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
+    world: 'ISOLATED',  // Extension's context, not page's - avoids CSP restrictions
     func: (code) => {
       try {
         const fn = new Function('return ' + code);

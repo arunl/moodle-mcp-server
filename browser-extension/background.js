@@ -187,6 +187,15 @@ async function handleCommand(command) {
         return await handleExtractCourseSections(id, params, tab);
       case 'setEditor':
         return await handleSetEditor(id, params, tab);
+      case 'set_moodle_date':
+        return await handleSetMoodleDate(id, params, tab);
+      // Assignment extraction handlers
+      case 'extract_assignments':
+        return await handleExtractAssignments(id, params, tab);
+      case 'extract_assignment_details':
+        return await handleExtractAssignmentDetails(id, params, tab);
+      case 'extract_submissions':
+        return await handleExtractSubmissions(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -588,6 +597,292 @@ async function handleSetEditor(id, params, tab) {
       return { success: true };
     },
     args: [htmlContent, editorId],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleSetMoodleDate(id, params, tab) {
+  const { fieldPrefix, dateString, enableCheckbox } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (prefix, dateStr, enable) => {
+      const date = new Date(dateStr);
+      
+      // Enable the date field if checkbox exists and enableCheckbox is true
+      if (enable) {
+        const checkbox = document.getElementById(`${prefix}_enabled`);
+        if (checkbox && !checkbox.checked) {
+          checkbox.click();
+          // Wait a moment for the fields to become enabled
+        }
+      }
+      
+      // Helper to set select dropdown value
+      const setSelect = (id, value) => {
+        const select = document.getElementById(id);
+        if (select) {
+          select.value = value;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        return false;
+      };
+      
+      // Helper to set input value
+      const setInput = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) {
+          input.value = value;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        return false;
+      };
+      
+      // Moodle uses select dropdowns for date components
+      const day = date.getDate();
+      const month = date.getMonth() + 1; // 0-indexed
+      const year = date.getFullYear();
+      const hour = date.getHours();
+      const minute = date.getMinutes();
+      
+      // Try setting as select dropdowns first (most common in Moodle)
+      const daySet = setSelect(`${prefix}_day`, day) || setInput(`${prefix}_day`, day);
+      const monthSet = setSelect(`${prefix}_month`, month) || setInput(`${prefix}_month`, month);
+      const yearSet = setSelect(`${prefix}_year`, year) || setInput(`${prefix}_year`, year);
+      const hourSet = setSelect(`${prefix}_hour`, hour) || setInput(`${prefix}_hour`, hour);
+      const minuteSet = setSelect(`${prefix}_minute`, minute) || setInput(`${prefix}_minute`, minute);
+      
+      return {
+        success: daySet && monthSet && yearSet,
+        data: {
+          day: daySet,
+          month: monthSet, 
+          year: yearSet,
+          hour: hourSet,
+          minute: minuteSet,
+          dateSet: dateStr,
+        },
+      };
+    },
+    args: [fieldPrefix, dateString, enableCheckbox],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtractAssignments(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const assignments = [];
+      
+      // Parse the assignments table
+      const rows = document.querySelectorAll('table tbody tr');
+      
+      rows.forEach((row) => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 4) {
+          const nameLink = row.querySelector('a[href*="mod/assign/view.php"]');
+          const topicCell = cells[0];
+          const dueDateCell = cells[2];
+          const submissionCell = cells[3];
+          const gradeCell = cells[4]; // Grade column if present
+          const gradingLink = row.querySelector('a[href*="action=grading"]');
+          
+          if (nameLink) {
+            const href = nameLink.getAttribute('href');
+            const idMatch = href.match(/id=(\d+)/);
+            
+            // Try to extract max grade from grade cell (often shows "-" or "X / Y")
+            let maxGrade = null;
+            if (gradeCell) {
+              const gradeText = gradeCell.textContent.trim();
+              const gradeMatch = gradeText.match(/\/\s*(\d+)/); // Match "/ 100" pattern
+              if (gradeMatch) {
+                maxGrade = parseInt(gradeMatch[1]);
+              }
+            }
+            
+            assignments.push({
+              id: idMatch ? parseInt(idMatch[1]) : null,
+              name: nameLink.textContent.trim(),
+              topic: topicCell ? topicCell.textContent.trim() : null,
+              dueDate: dueDateCell ? dueDateCell.textContent.trim() : null,
+              submissions: submissionCell ? parseInt(submissionCell.textContent.trim()) || 0 : 0,
+              needsGrading: gradingLink ? parseInt(gradingLink.textContent.match(/\d+/)?.[0]) || 0 : 0,
+              maxGrade: maxGrade,
+              url: nameLink.href,
+            });
+          }
+        }
+      });
+      
+      return {
+        success: true,
+        data: {
+          assignments,
+          count: assignments.length,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtractAssignmentDetails(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const details = {
+        name: null,
+        description: null,
+        dueDate: null,
+        cutoffDate: null,
+        maxGrade: null,
+        submissionStatus: null,
+        gradingStatus: null,
+        timeRemaining: null,
+        participants: null,
+        submitted: null,
+        needsGrading: null,
+      };
+      
+      // Get assignment name
+      const header = document.querySelector('.activity-header h2, .page-header-headings h1, h2');
+      if (header) {
+        details.name = header.textContent.trim();
+      }
+      
+      // Get description
+      const intro = document.querySelector('.activity-description, .intro, [data-region="intro"]');
+      if (intro) {
+        details.description = intro.innerHTML;
+      }
+      
+      // Parse submission status table (student view)
+      const statusTable = document.querySelector('.submissionstatustable, .generaltable');
+      if (statusTable) {
+        const rows = statusTable.querySelectorAll('tr');
+        rows.forEach((row) => {
+          const label = row.querySelector('td:first-child, th')?.textContent?.trim().toLowerCase();
+          const value = row.querySelector('td:last-child')?.textContent?.trim();
+          
+          if (label?.includes('due date')) {
+            details.dueDate = value;
+          } else if (label?.includes('cut-off')) {
+            details.cutoffDate = value;
+          } else if (label?.includes('time remaining')) {
+            details.timeRemaining = value;
+          } else if (label?.includes('submission status')) {
+            details.submissionStatus = value;
+          } else if (label?.includes('grading status')) {
+            details.gradingStatus = value;
+          } else if (label?.includes('grade')) {
+            // Try to extract max grade from "Grade" or "Grade out of X"
+            const gradeMatch = value?.match(/(\d+)/);
+            if (gradeMatch) {
+              details.maxGrade = parseInt(gradeMatch[1]);
+            }
+          }
+        });
+      }
+      
+      // Parse grading summary (instructor view)
+      const gradingSummary = document.querySelector('.submissionsummarytable, .gradingsummarytable');
+      if (gradingSummary) {
+        const rows = gradingSummary.querySelectorAll('tr');
+        rows.forEach((row) => {
+          const label = row.querySelector('td:first-child, th')?.textContent?.trim().toLowerCase();
+          const value = row.querySelector('td:last-child')?.textContent?.trim();
+          
+          if (label?.includes('participants')) {
+            details.participants = parseInt(value) || null;
+          } else if (label?.includes('submitted')) {
+            details.submitted = parseInt(value) || null;
+          } else if (label?.includes('needs grading')) {
+            details.needsGrading = parseInt(value) || null;
+          } else if (label?.includes('due date')) {
+            details.dueDate = value;
+          }
+        });
+      }
+      
+      // Try to get max grade from grade display
+      const gradeInfo = document.querySelector('.gradeinfo, .grade');
+      if (gradeInfo) {
+        const gradeMatch = gradeInfo.textContent.match(/out of (\d+)/i);
+        if (gradeMatch) {
+          details.maxGrade = parseInt(gradeMatch[1]);
+        }
+      }
+      
+      return {
+        success: true,
+        data: details,
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtractSubmissions(id, params, tab) {
+  const { filter } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (filterType) => {
+      const submissions = [];
+      
+      // Parse grading table
+      const rows = document.querySelectorAll('table tbody tr[data-userid], table tbody tr[class*="user"]');
+      
+      rows.forEach((row) => {
+        const userId = row.getAttribute('data-userid') || row.querySelector('[data-userid]')?.getAttribute('data-userid');
+        const nameEl = row.querySelector('.fullname a, td.cell.c2 a, .userfullname');
+        const statusEl = row.querySelector('.submissionstatussubmitted, .submissionstatusnotsubmitted, [class*="submissionstatus"]');
+        const gradeEl = row.querySelector('.grade, td.cell.c4');
+        const feedbackEl = row.querySelector('.feedbacktext');
+        const submissionDateEl = row.querySelector('.timesubmitted, td.cell.c7');
+        
+        const submission = {
+          userId: userId ? parseInt(userId) : null,
+          name: nameEl ? nameEl.textContent.trim() : null,
+          status: statusEl ? statusEl.textContent.trim() : null,
+          grade: gradeEl ? gradeEl.textContent.trim() : null,
+          feedback: feedbackEl ? feedbackEl.textContent.trim() : null,
+          submissionDate: submissionDateEl ? submissionDateEl.textContent.trim() : null,
+        };
+        
+        // Apply filter
+        if (filterType === 'all') {
+          submissions.push(submission);
+        } else if (filterType === 'submitted' && submission.status?.toLowerCase().includes('submitted')) {
+          submissions.push(submission);
+        } else if (filterType === 'needs_grading' && !submission.grade) {
+          submissions.push(submission);
+        } else if (filterType === 'not_submitted' && !submission.status?.toLowerCase().includes('submitted')) {
+          submissions.push(submission);
+        }
+      });
+      
+      return {
+        success: true,
+        data: {
+          submissions,
+          count: submissions.length,
+          filter: filterType,
+          url: window.location.href,
+        },
+      };
+    },
+    args: [filter || 'all'],
   });
   
   return { id, ...result[0].result };

@@ -347,6 +347,117 @@ Navigates to the section and clicks the delete option.`,
   },
 
   // -----------------------------
+  // Assignment CRUD operations
+  // -----------------------------
+  {
+    name: 'list_assignments',
+    description: `List all assignments in a course with due dates and submission counts.
+    
+Returns assignment names, due dates, submission counts, and grading status.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'get_assignment',
+    description: `Get details of a specific assignment including description and settings.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assignment_id: { type: 'number', description: 'The assignment cmid (from mod/assign/view.php?id=...).' },
+      },
+      required: ['assignment_id'],
+    },
+  },
+  {
+    name: 'get_assignment_submissions',
+    description: `Get the list of submissions for an assignment.
+    
+Returns student names, submission status, grades, and feedback.
+Useful for grading overview.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assignment_id: { type: 'number', description: 'The assignment cmid.' },
+        filter: { 
+          type: 'string', 
+          description: 'Filter submissions: "all", "submitted", "needs_grading", "not_submitted". Defaults to "all".',
+          default: 'all',
+        },
+      },
+      required: ['assignment_id'],
+    },
+  },
+  {
+    name: 'create_assignment',
+    description: `Create a new assignment in a course section.
+    
+Opens the assignment creation form and fills in the details.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+        section_num: { type: 'number', description: 'The section number (0-based) to add the assignment to.' },
+        name: { type: 'string', description: 'The assignment name/title.' },
+        description: { type: 'string', description: 'HTML description/instructions for the assignment.' },
+        due_date: { type: 'string', description: 'Due date in ISO format (e.g., "2026-02-15T23:55:00").' },
+        max_grade: { type: 'number', description: 'Maximum grade points. Defaults to 100.', default: 100 },
+      },
+      required: ['course_id', 'section_num', 'name'],
+    },
+  },
+  {
+    name: 'edit_assignment',
+    description: `Edit an existing assignment's settings.
+    
+Can update name, description, due date, max grade, and other settings.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assignment_id: { type: 'number', description: 'The assignment cmid to edit.' },
+        name: { type: 'string', description: 'New assignment name (optional).' },
+        description: { type: 'string', description: 'New HTML description (optional).' },
+        due_date: { type: 'string', description: 'New due date in ISO format (optional).' },
+        max_grade: { type: 'number', description: 'New maximum grade points (optional).' },
+      },
+      required: ['assignment_id'],
+    },
+  },
+  {
+    name: 'delete_assignment',
+    description: `Delete an assignment from the course.
+    
+WARNING: This will delete all submissions and grades for this assignment.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assignment_id: { type: 'number', description: 'The assignment cmid to delete.' },
+        confirm: { type: 'boolean', description: 'Must be true to confirm deletion.', default: false },
+      },
+      required: ['assignment_id', 'confirm'],
+    },
+  },
+  {
+    name: 'extend_assignment_deadline',
+    description: `Grant a deadline extension to a specific student.
+    
+Useful for accommodations or late requests.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        assignment_id: { type: 'number', description: 'The assignment cmid.' },
+        user_id: { type: 'number', description: 'The Moodle user ID to grant extension to.' },
+        new_due_date: { type: 'string', description: 'New due date for this student in ISO format.' },
+      },
+      required: ['assignment_id', 'user_id', 'new_due_date'],
+    },
+  },
+
+  // -----------------------------
   // Existing higher-level tools
   // -----------------------------
   {

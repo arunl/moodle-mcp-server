@@ -1,7 +1,9 @@
 #!/bin/bash
 # Start the hosted MCP server for local development
 
-cd "$(dirname "$0")/server"
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR/server"
 
 export DATABASE_URL="file:local.db"
 export JWT_SECRET="dev-secret-key-12345"

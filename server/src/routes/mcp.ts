@@ -798,6 +798,119 @@ async function handleToolCall(
         result = { success: true, forumId: args.forum_id, subject: args.subject };
         break;
 
+      case 'analyze_forum':
+        // Navigate to forum page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/forum/view.php?id=${args.forum_cmid}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table, .discussion-list', timeout: 10000 });
+        
+        // Extract discussions from the forum page
+        const forumResult = await sendBrowserCommand(userId, 'extract_forum_discussions', {});
+        const discussions: Array<{
+          id: number;
+          title: string;
+          author: string;
+          replyCount: number;
+          url: string;
+        }> = forumResult?.data?.discussions || [];
+        
+        // Track who started discussions and reply counts
+        const discussionStarters = new Set<string>();
+        const excludeSet = new Set<string>((args.exclude_users || []).map((u: string) => u.toLowerCase()));
+        
+        // Collect all discussion authors (filtered)
+        discussions.forEach((d) => {
+          if (d.author && !excludeSet.has(d.author.toLowerCase())) {
+            discussionStarters.add(d.author);
+          }
+        });
+        
+        // For each discussion with replies, extract reply details
+        const replierCounts: Record<string, number> = {};
+        const replierToOthersCounts: Record<string, number> = {}; // Replies to posts NOT started by the replier
+        
+        // Process discussions with replies (limit to first 20 to avoid timeout)
+        const discussionsWithReplies = discussions.filter(d => d.replyCount > 0).slice(0, 20);
+        
+        for (const discussion of discussionsWithReplies) {
+          // Navigate to discussion
+          await sendBrowserCommand(userId, 'navigate', { url: discussion.url });
+          await sendBrowserCommand(userId, 'wait', { selector: '.forumpost, .forum-post', timeout: 10000 });
+          
+          // Extract replies
+          const replyResult = await sendBrowserCommand(userId, 'extract_discussion_replies', {});
+          const replyData = replyResult?.data || {};
+          
+          // Count replies by user (excluding discussion starter for "replies to others")
+          const discussionStarter = replyData.discussionStarter;
+          const posts = replyData.posts || [];
+          
+          posts.forEach((post: { author: string; isOriginal: boolean }, index: number) => {
+            if (index === 0) return; // Skip original post
+            if (!post.author) return;
+            if (excludeSet.has(post.author.toLowerCase())) return;
+            
+            // Total replies by this person
+            replierCounts[post.author] = (replierCounts[post.author] || 0) + 1;
+            
+            // Replies to others (not their own discussion)
+            if (post.author.toLowerCase() !== discussionStarter?.toLowerCase()) {
+              replierToOthersCounts[post.author] = (replierToOthersCounts[post.author] || 0) + 1;
+            }
+          });
+        }
+        
+        // Get enrolled students if course_id provided
+        let enrolledStudents: string[] = [];
+        let nonParticipants: string[] = [];
+        
+        if (args.course_id) {
+          // Navigate to participants page
+          await sendBrowserCommand(userId, 'navigate', {
+            url: `/user/index.php?id=${args.course_id}&perpage=5000`,
+          });
+          await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
+          
+          const participantsResult = await sendBrowserCommand(userId, 'extract_participants', {});
+          const participants = participantsResult?.participants || [];
+          
+          enrolledStudents = participants
+            .filter((p: { role?: string; name: string }) => 
+              p.role?.toLowerCase() === 'student' && !excludeSet.has(p.name.toLowerCase())
+            )
+            .map((p: { name: string }) => p.name);
+          
+          // Find students who didn't post a discussion
+          const participantSet = new Set<string>(discussionStarters);
+          const replierSet = new Set<string>(Object.keys(replierCounts));
+          
+          nonParticipants = enrolledStudents.filter(
+            (s) => !participantSet.has(s) && !replierSet.has(s)
+          );
+        }
+        
+        // Sort top repliers (by replies to others' posts)
+        const topRepliers = Object.entries(replierToOthersCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([name, count]) => ({ name, repliesToOthers: count }));
+        
+        result = {
+          forumCmid: args.forum_cmid,
+          totalDiscussions: discussions.length,
+          discussionStarters: Array.from(discussionStarters),
+          discussionStarterCount: discussionStarters.size,
+          replierCounts,
+          repliesToOthersCounts: replierToOthersCounts,
+          topRepliers,
+          enrolledStudentCount: enrolledStudents.length,
+          nonParticipants,
+          nonParticipantCount: nonParticipants.length,
+          discussions: discussions.slice(0, 50), // Limit for response size
+        };
+        break;
+
       case 'bulk_shift_deadlines':
         // Get list of assignments
         await sendBrowserCommand(userId, 'navigate', {

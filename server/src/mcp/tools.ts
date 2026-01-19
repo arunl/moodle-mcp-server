@@ -1,5 +1,8 @@
 // MCP Tool definitions for Moodle interactions
 export const moodleTools = [
+  // -----------------------------
+  // Core / Bridge primitives
+  // -----------------------------
   {
     name: 'get_browser_status',
     description: 'Check if the browser extension is connected and ready to interact with Moodle.',
@@ -35,7 +38,6 @@ Examples:
 Use CSS selectors to identify elements. Common patterns:
 - By ID: #element-id
 - By class: .class-name
-- By text content: button:contains("Submit")
 - By attribute: [data-action="edit"]
 - Combine: a.nav-link[href*="course"]`,
     inputSchema: {
@@ -84,8 +86,6 @@ Returns:
 - Page title
 - Main content text
 - Links (with text and URLs)
-- Tables (if any)
-- Form fields (if any)
 - Headings hierarchy`,
     inputSchema: {
       type: 'object',
@@ -102,6 +102,10 @@ Returns:
               type: 'string',
               description: 'Selector for links to extract.',
             },
+            courses: {
+              type: 'string',
+              description: 'Selector to extract course items.',
+            },
           },
         },
       },
@@ -112,15 +116,8 @@ Returns:
     name: 'set_editor_content',
     description: `Set HTML content in a Moodle rich text editor (Atto/TinyMCE).
     
-This tool handles the complexity of Moodle's editor by using JavaScript to directly set both the hidden textarea and the contenteditable div.
-
-Use this for creating or editing:
-- Moodle Book chapters
-- Forum posts
-- Assignment descriptions
-- Page resources
-- Labels
-- Any content area with a rich text editor`,
+This tool uses JavaScript to directly set the underlying textarea and the visible contenteditable region.
+Use this for Book chapters, Forum posts, Assignment descriptions, Labels, etc.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -130,11 +127,11 @@ Use this for creating or editing:
         },
         editor_id: {
           type: 'string',
-          description: 'Optional: The ID of the editor textarea (e.g., "id_content_editor"). If not provided, will find the first editor on the page.',
+          description: 'Optional: The ID of the editor textarea (e.g., "id_content_editor"). If omitted, finds the first plausible editor on the page.',
         },
         auto_save: {
           type: 'boolean',
-          description: 'Whether to automatically click the save button after setting content.',
+          description: 'Whether to automatically click a submit button after setting content.',
           default: false,
         },
       },
@@ -164,12 +161,8 @@ Use this for creating or editing:
     name: 'evaluate_script',
     description: `Execute custom JavaScript in the browser context.
     
-Use this for complex operations that aren't covered by other tools.
-The script should return a value that will be sent back as the result.
-
-Example:
-- Get course ID: "return document.body.dataset.courseId"
-- Count items: "return document.querySelectorAll('.activity').length"`,
+Use this for complex operations not covered by other tools. The script should return a value.
+Example: "return document.querySelectorAll('.activity').length"`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -181,6 +174,90 @@ Example:
       required: ['script'],
     },
   },
+
+  // -----------------------------
+  // Moodle macros (v0) - implemented on server via primitives
+  // -----------------------------
+  {
+    name: 'open_course',
+    description: 'Open a Moodle course home page by course ID (course/view.php?id=...).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'open_participants',
+    description: 'Open the Participants page for a given course (user/index.php?id=...).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'list_participants',
+    description: 'Return a structured list of participants enrolled in a course by parsing the Participants table.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+        page: { type: 'number', description: 'Participants pagination page (0-based). Defaults to 0.', default: 0 },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'enable_editing',
+    description: 'Enable editing mode for a course (course/view.php?id=...&notifyeditingon=1).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'list_addable_sections',
+    description: 'List section IDs in the current course page that expose an "Add an activity or resource" button (requires editing enabled).',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'forum_list_discussions',
+    description: 'List discussions (topic title + discussion id + URL) for a forum by its view id (mod/forum/view.php?id=...).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        forum_view_id: { type: 'number', description: 'The id parameter for mod/forum/view.php?id=... (forum cmid).' },
+      },
+      required: ['forum_view_id'],
+    },
+  },
+  {
+    name: 'book_export_word',
+    description: 'Open the "Export book to Microsoft Word" flow for a Book by its cmid (mod/book/tool/wordimport/index.php?id=...&action=export).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        book_cmid: { type: 'number', description: 'The book cmid (id on mod/book/view.php?id=...).' },
+      },
+      required: ['book_cmid'],
+    },
+  },
+
+  // -----------------------------
+  // Existing higher-level tools
+  // -----------------------------
   {
     name: 'get_courses',
     description: `Get a list of the user's Moodle courses.

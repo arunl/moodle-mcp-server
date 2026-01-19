@@ -186,7 +186,9 @@ export interface BrowserCommand {
     // Editor and form actions
     | 'setEditor' | 'set_moodle_date'
     // Session/auth actions
-    | 'extract_sesskey' | 'extract_course_id';
+    | 'extract_sesskey' | 'extract_course_id'
+    // Messaging actions
+    | 'send_moodle_message';
   params: Record<string, unknown>;
 }
 

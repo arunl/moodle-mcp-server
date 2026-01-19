@@ -1017,6 +1017,98 @@ async function handleToolCall(
         };
         break;
 
+      case 'send_message':
+        // Navigate to the messaging page for this user
+        const targetUserId = args.user_id;
+        const messageText = args.message;
+        
+        // Moodle messaging URL - go directly to message compose
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/message/index.php?id=${targetUserId}`,
+        });
+        
+        // Wait for the messaging interface to load
+        await sendBrowserCommand(userId, 'wait', { 
+          selector: '[data-region="send-message-txt"], textarea[data-region="send-message"], .message-app', 
+          timeout: 10000 
+        });
+        
+        // Small delay for UI to fully initialize
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Try to type in the message input
+        const msgResult = await sendBrowserCommand(userId, 'send_moodle_message', {
+          message: messageText,
+          userId: targetUserId,
+        });
+        
+        if (msgResult?.success) {
+          result = {
+            success: true,
+            userId: targetUserId,
+            message: 'Message sent successfully',
+          };
+        } else {
+          result = {
+            success: false,
+            userId: targetUserId,
+            error: msgResult?.error || 'Failed to send message',
+          };
+        }
+        break;
+
+      case 'bulk_send_message':
+        const userIds: number[] = args.user_ids;
+        const bulkMessage = args.message;
+        const sendResults: Array<{ userId: number; success: boolean; error?: string }> = [];
+        
+        for (const uid of userIds) {
+          try {
+            // Navigate to messaging page for this user
+            await sendBrowserCommand(userId, 'navigate', {
+              url: `/message/index.php?id=${uid}`,
+            });
+            
+            await sendBrowserCommand(userId, 'wait', { 
+              selector: '[data-region="send-message-txt"], textarea[data-region="send-message"], .message-app', 
+              timeout: 10000 
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const sendResult = await sendBrowserCommand(userId, 'send_moodle_message', {
+              message: bulkMessage,
+              userId: uid,
+            });
+            
+            sendResults.push({
+              userId: uid,
+              success: sendResult?.success || false,
+              error: sendResult?.error,
+            });
+            
+            // Small delay between messages to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (err) {
+            sendResults.push({
+              userId: uid,
+              success: false,
+              error: err instanceof Error ? err.message : 'Unknown error',
+            });
+          }
+        }
+        
+        const successCount = sendResults.filter(r => r.success).length;
+        const failCount = sendResults.filter(r => !r.success).length;
+        
+        result = {
+          totalUsers: userIds.length,
+          successCount,
+          failCount,
+          results: sendResults,
+        };
+        break;
+
       default:
         return {
           jsonrpc: '2.0',

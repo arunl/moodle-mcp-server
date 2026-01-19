@@ -703,6 +703,63 @@ Useful for tracking participation in introduction forums, Q&A forums, etc.`,
       required: ['forum_cmid'],
     },
   },
+  
+  // === MESSAGING TOOLS ===
+  {
+    name: 'send_message',
+    description: `Send a direct message to a Moodle user.
+    
+This navigates to the user's profile, opens the message dialog, and sends a message.
+Useful for reminders, feedback, or reaching out to individual students.
+
+Example: send_message(user_id=34538, message="Hi! Please post your self-introduction.")`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        user_id: {
+          type: 'number',
+          description: 'The Moodle user ID (from participant list or user profile URL).',
+        },
+        message: {
+          type: 'string',
+          description: 'The message content to send.',
+        },
+        course_id: {
+          type: 'number',
+          description: 'Optional: Course ID for context (helps with navigation).',
+        },
+      },
+      required: ['user_id', 'message'],
+    },
+  },
+  {
+    name: 'bulk_send_message',
+    description: `Send the same message to multiple Moodle users.
+    
+Iterates through a list of user IDs and sends each one the same message.
+Returns a summary of successful and failed sends.
+
+Example: bulk_send_message(user_ids=[123, 456, 789], message="Reminder: Please post your introduction!")`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        user_ids: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of Moodle user IDs to message.',
+        },
+        message: {
+          type: 'string',
+          description: 'The message content to send to all users.',
+        },
+        course_id: {
+          type: 'number',
+          description: 'Optional: Course ID for context.',
+        },
+      },
+      required: ['user_ids', 'message'],
+    },
+  },
 ];
 
 // Generate unique command ID

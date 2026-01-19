@@ -476,45 +476,6 @@ async function handleExtractAddableSections(id, params, tab) {
   return { id, ...result[0].result };
 }
 
-async function handleExtractForumDiscussions(id, params, tab) {
-  const result = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: () => {
-      const discussions = [];
-      
-      // Try different forum layouts
-      const rows = document.querySelectorAll('.forumpost, .discussion, table.forumheaderlist tbody tr, [data-region="discussion-list"] article');
-      
-      rows.forEach((row) => {
-        const titleLink = row.querySelector('a.discussion-link, a[href*="discuss.php"], .topic a, .subject a');
-        const authorEl = row.querySelector('.author, .lastpost a[href*="user/view.php"]');
-        
-        if (titleLink) {
-          const href = titleLink.getAttribute('href');
-          const idMatch = href.match(/d=(\d+)/);
-          discussions.push({
-            title: titleLink.textContent.trim(),
-            discussionId: idMatch ? parseInt(idMatch[1]) : null,
-            url: titleLink.href,
-            author: authorEl ? authorEl.textContent.trim() : null,
-          });
-        }
-      });
-      
-      return {
-        success: true,
-        data: {
-          discussions,
-          count: discussions.length,
-          url: window.location.href,
-        },
-      };
-    },
-  });
-  
-  return { id, ...result[0].result };
-}
-
 async function handleExtractCourseSections(id, params, tab) {
   const result = await chrome.scripting.executeScript({
     target: { tabId: tab.id },

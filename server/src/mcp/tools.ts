@@ -670,6 +670,39 @@ This tool navigates to the forum's new discussion page, fills in the subject and
       required: ['forum_id', 'subject', 'message'],
     },
   },
+  {
+    name: 'analyze_forum',
+    description: `Analyze a forum to get participation statistics.
+    
+Returns:
+- List of all discussions with author and reply count
+- Students who started a discussion (posted introduction)
+- Students who only replied (didn't start a discussion)
+- Reply counts per student (excluding replies to their own posts)
+- Top responders (students with most replies to others)
+- Students who haven't participated at all (requires course_id)
+
+Useful for tracking participation in introduction forums, Q&A forums, etc.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        forum_cmid: {
+          type: 'number',
+          description: 'The forum cmid (from mod/forum/view.php?id=...).',
+        },
+        course_id: {
+          type: 'number',
+          description: 'Optional: Course ID to cross-reference with enrolled students and find non-participants.',
+        },
+        exclude_users: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: Names to exclude from analysis (e.g., instructor names).',
+        },
+      },
+      required: ['forum_cmid'],
+    },
+  },
 ];
 
 // Generate unique command ID

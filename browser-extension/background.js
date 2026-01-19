@@ -205,6 +205,10 @@ async function handleCommand(command) {
         return await handleExtractActivities(id, params, tab);
       case 'set_activity_date':
         return await handleSetActivityDate(id, params, tab);
+      case 'extract_forum_discussions':
+        return await handleExtractForumDiscussions(id, params, tab);
+      case 'extract_discussion_replies':
+        return await handleExtractDiscussionReplies(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -1174,6 +1178,212 @@ async function handleSetActivityDate(id, params, tab) {
       }
     },
     args: [fieldName, targetDate.toISOString(), enabled],
+  });
+  
+  return { id, ...result[0].result };
+}
+
+// Extract all discussions from a forum page
+async function handleExtractForumDiscussions(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const discussions = [];
+      
+      // Find all discussion rows in the forum
+      const discussionRows = document.querySelectorAll('tr.discussion, .discussion-list-item, [data-region="discussion-list"] tr');
+      
+      discussionRows.forEach((row) => {
+        // Try to get discussion link and title
+        const titleLink = row.querySelector('a.w-100.h-100, .discussion-name a, td.topic a, .discussionname a');
+        if (!titleLink) return;
+        
+        const title = titleLink.textContent.trim();
+        const href = titleLink.href;
+        const discussionIdMatch = href.match(/d=(\d+)/);
+        const discussionId = discussionIdMatch ? parseInt(discussionIdMatch[1]) : null;
+        
+        // Get author (Started by)
+        const authorCell = row.querySelector('td.author, .discussion-started-by, .author-info');
+        let author = null;
+        if (authorCell) {
+          const authorLink = authorCell.querySelector('a');
+          author = authorLink ? authorLink.textContent.trim() : authorCell.textContent.trim();
+        }
+        
+        // Get reply count
+        const repliesCell = row.querySelector('td.replies, .discussion-replies, [data-region="replies"]');
+        let replyCount = 0;
+        if (repliesCell) {
+          const replyText = repliesCell.textContent.trim();
+          const replyMatch = replyText.match(/(\d+)/);
+          replyCount = replyMatch ? parseInt(replyMatch[1]) : 0;
+        }
+        
+        // Get last post info
+        const lastPostCell = row.querySelector('td.lastpost, .discussion-last-post');
+        let lastPostAuthor = null;
+        let lastPostDate = null;
+        if (lastPostCell) {
+          const lastPostLink = lastPostCell.querySelector('a');
+          if (lastPostLink) {
+            lastPostAuthor = lastPostLink.textContent.trim();
+          }
+          const dateText = lastPostCell.textContent;
+          const dateMatch = dateText.match(/(\d{1,2}\s+\w+\s+\d{4})/);
+          lastPostDate = dateMatch ? dateMatch[1] : null;
+        }
+        
+        if (discussionId && title) {
+          discussions.push({
+            id: discussionId,
+            title,
+            author,
+            replyCount,
+            lastPostAuthor,
+            lastPostDate,
+            url: href,
+          });
+        }
+      });
+      
+      // Alternative: try the table format
+      if (discussions.length === 0) {
+        const tableRows = document.querySelectorAll('table.forumheaderlist tbody tr, .generaltable tbody tr');
+        tableRows.forEach((row) => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length < 3) return;
+          
+          const titleCell = cells[0];
+          const titleLink = titleCell.querySelector('a');
+          if (!titleLink) return;
+          
+          const title = titleLink.textContent.trim();
+          const href = titleLink.href;
+          const discussionIdMatch = href.match(/d=(\d+)/);
+          const discussionId = discussionIdMatch ? parseInt(discussionIdMatch[1]) : null;
+          
+          // Author is typically in cell 1 or has class 'author'
+          let author = null;
+          const authorCell = row.querySelector('td.author') || cells[1];
+          if (authorCell) {
+            const authorLink = authorCell.querySelector('a');
+            author = authorLink ? authorLink.textContent.trim() : authorCell.textContent.trim().split('\n')[0].trim();
+          }
+          
+          // Replies count
+          let replyCount = 0;
+          const repliesCell = row.querySelector('td.replies');
+          if (repliesCell) {
+            replyCount = parseInt(repliesCell.textContent.trim()) || 0;
+          } else if (cells.length > 3) {
+            replyCount = parseInt(cells[cells.length - 2]?.textContent.trim()) || 0;
+          }
+          
+          if (discussionId && title) {
+            discussions.push({
+              id: discussionId,
+              title,
+              author,
+              replyCount,
+              url: href,
+            });
+          }
+        });
+      }
+      
+      return {
+        success: true,
+        data: {
+          discussions,
+          count: discussions.length,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+// Extract replies from a single discussion page
+async function handleExtractDiscussionReplies(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const posts = [];
+      
+      // Find all posts in the discussion
+      const postElements = document.querySelectorAll('.forumpost, [data-region="post"], .forum-post');
+      
+      postElements.forEach((post, index) => {
+        // Get author
+        const authorEl = post.querySelector('.author a, .d-flex.flex-column a[href*="user/view"], .posting-author a');
+        const author = authorEl ? authorEl.textContent.trim() : null;
+        
+        // Get date
+        const dateEl = post.querySelector('.author time, .post-date, .posting-date time');
+        const date = dateEl ? dateEl.textContent.trim() : null;
+        
+        // Get post ID
+        const postId = post.id || post.dataset.postId || `post-${index}`;
+        
+        // Check if this is the original post (first one) or a reply
+        const isOriginal = index === 0 || post.classList.contains('firstpost');
+        
+        // Get parent info (which post this is replying to)
+        const parentLink = post.querySelector('a[href*="parent="]');
+        let parentId = null;
+        if (parentLink) {
+          const parentMatch = parentLink.href.match(/parent=(\d+)/);
+          parentId = parentMatch ? parentMatch[1] : null;
+        }
+        
+        if (author) {
+          posts.push({
+            postId,
+            author,
+            date,
+            isOriginal,
+            parentId,
+          });
+        }
+      });
+      
+      // Get discussion info
+      const discussionTitle = document.querySelector('.discussionname, h2.discussion-title, .subject')?.textContent.trim();
+      const discussionIdMatch = window.location.href.match(/d=(\d+)/);
+      const discussionId = discussionIdMatch ? parseInt(discussionIdMatch[1]) : null;
+      
+      // The first post author is the discussion starter
+      const discussionStarter = posts.length > 0 ? posts[0].author : null;
+      
+      // Count replies (all posts except the first one)
+      const replies = posts.slice(1);
+      
+      // Count unique repliers (excluding discussion starter if they also replied)
+      const replierCounts = {};
+      replies.forEach((reply) => {
+        if (reply.author && reply.author !== discussionStarter) {
+          replierCounts[reply.author] = (replierCounts[reply.author] || 0) + 1;
+        }
+      });
+      
+      return {
+        success: true,
+        data: {
+          discussionId,
+          discussionTitle,
+          discussionStarter,
+          totalPosts: posts.length,
+          replyCount: replies.length,
+          posts,
+          uniqueRepliers: Object.keys(replierCounts),
+          replierCounts,
+          url: window.location.href,
+        },
+      };
+    },
   });
   
   return { id, ...result[0].result };

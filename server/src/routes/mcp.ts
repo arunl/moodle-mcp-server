@@ -798,6 +798,107 @@ async function handleToolCall(
         result = { success: true, forumId: args.forum_id, subject: args.subject };
         break;
 
+      case 'bulk_shift_deadlines':
+        // Get list of assignments
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/assign/index.php?id=${args.course_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
+        
+        const assignmentsData = await sendBrowserCommand(userId, 'extract_assignments', {});
+        const allAssignments = assignmentsData?.assignments || [];
+        
+        // Filter by name pattern
+        const pattern = new RegExp(args.name_pattern, 'i');
+        const matchingAssignments = allAssignments.filter((a: { name: string; dueDate: string }) => 
+          pattern.test(a.name) && a.dueDate && a.dueDate !== '-'
+        );
+        
+        if (matchingAssignments.length === 0) {
+          result = { 
+            error: `No assignments matching "${args.name_pattern}" with due dates found.`,
+            totalAssignments: allAssignments.length,
+          };
+          break;
+        }
+        
+        // Parse dates and calculate new dates
+        const changes = matchingAssignments.map((a: { id: number; name: string; dueDate: string }) => {
+          // Parse the date string (e.g., "Monday, January 19, 2026, 6:30 PM")
+          const currentDate = new Date(a.dueDate.replace(/,/g, ''));
+          const newDate = new Date(currentDate);
+          newDate.setDate(newDate.getDate() + args.days);
+          
+          return {
+            id: a.id,
+            name: a.name,
+            currentDueDate: a.dueDate,
+            newDueDate: newDate.toISOString(),
+            newDueDateFormatted: newDate.toLocaleString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            }),
+          };
+        });
+        
+        if (!args.confirm) {
+          // Preview mode
+          result = {
+            preview: true,
+            message: `Found ${changes.length} assignments to update. Set confirm=true to apply changes.`,
+            daysToShift: args.days,
+            changes,
+          };
+          break;
+        }
+        
+        // Apply changes
+        const results: { id: number; name: string; success: boolean; error?: string }[] = [];
+        for (const change of changes) {
+          try {
+            // Navigate to assignment edit page
+            await sendBrowserCommand(userId, 'navigate', {
+              url: `/course/modedit.php?update=${change.id}`,
+            });
+            await sendBrowserCommand(userId, 'wait', { selector: '#id_duedate_day', timeout: 10000 });
+            
+            // Set the new due date
+            await sendBrowserCommand(userId, 'set_moodle_date', {
+              fieldPrefix: 'id_duedate',
+              dateString: change.newDueDate,
+              enableCheckbox: true,
+            });
+            
+            // Save
+            await sendBrowserCommand(userId, 'click', {
+              selector: '#id_submitbutton',
+            });
+            await sendBrowserCommand(userId, 'wait', { selector: '.course-content, .section', timeout: 10000 });
+            
+            results.push({ id: change.id, name: change.name, success: true });
+          } catch (err) {
+            results.push({ 
+              id: change.id, 
+              name: change.name, 
+              success: false, 
+              error: err instanceof Error ? err.message : 'Unknown error',
+            });
+          }
+        }
+        
+        result = {
+          success: true,
+          message: `Updated ${results.filter(r => r.success).length} of ${results.length} assignments.`,
+          daysShifted: args.days,
+          results,
+        };
+        break;
+
       default:
         return {
           jsonrpc: '2.0',

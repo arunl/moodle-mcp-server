@@ -211,6 +211,8 @@ async function handleCommand(command) {
         return await handleSetActivityDate(id, params, tab);
       case 'extract_discussion_replies':
         return await handleExtractDiscussionReplies(id, params, tab);
+      case 'send_moodle_message':
+        return await handleSendMoodleMessage(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -1439,6 +1441,125 @@ async function handleExtractDiscussionReplies(id, params, tab) {
         },
       };
     },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+// Send a message to a Moodle user via the messaging interface
+async function handleSendMoodleMessage(id, params, tab) {
+  const { message, userId } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: async (messageText, targetUserId) => {
+      // Function to wait for an element to appear
+      const waitForElement = (selector, timeout = 10000) => {
+        return new Promise((resolve, reject) => {
+          const element = document.querySelector(selector);
+          if (element) {
+            return resolve(element);
+          }
+          
+          const observer = new MutationObserver(() => {
+            const el = document.querySelector(selector);
+            if (el) {
+              observer.disconnect();
+              resolve(el);
+            }
+          });
+          
+          observer.observe(document.body, { childList: true, subtree: true });
+          
+          setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Timeout waiting for: ${selector}`));
+          }, timeout);
+        });
+      };
+      
+      try {
+        // Moodle messaging interface has different layouts
+        // Try the modern message app first
+        
+        // Look for the message input textarea
+        let messageInput = document.querySelector(
+          '[data-region="send-message-txt"], ' +
+          'textarea[data-region="send-message"], ' +
+          'textarea[placeholder*="message"], ' +
+          '.message-input textarea, ' +
+          '[contenteditable="true"][data-region="send-message-txt"]'
+        );
+        
+        if (!messageInput) {
+          // Try waiting for it
+          try {
+            messageInput = await waitForElement(
+              '[data-region="send-message-txt"], textarea[data-region="send-message"]',
+              5000
+            );
+          } catch (e) {
+            // Still not found
+          }
+        }
+        
+        if (!messageInput) {
+          return { 
+            success: false, 
+            error: 'Could not find message input field',
+            url: window.location.href,
+          };
+        }
+        
+        // Type the message
+        if (messageInput.tagName === 'TEXTAREA' || messageInput.tagName === 'INPUT') {
+          messageInput.value = messageText;
+          messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+          messageInput.dispatchEvent(new Event('change', { bubbles: true }));
+        } else if (messageInput.contentEditable === 'true') {
+          messageInput.textContent = messageText;
+          messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        
+        // Small delay before sending
+        await new Promise(r => setTimeout(r, 500));
+        
+        // Find and click the send button
+        const sendButton = document.querySelector(
+          '[data-action="send-message"], ' +
+          'button[data-action="send-message"], ' +
+          '.send-message-button, ' +
+          'button[type="submit"]'
+        );
+        
+        if (!sendButton) {
+          return { 
+            success: false, 
+            error: 'Could not find send button',
+            url: window.location.href,
+          };
+        }
+        
+        sendButton.click();
+        
+        // Wait a moment for the message to send
+        await new Promise(r => setTimeout(r, 1000));
+        
+        return { 
+          success: true, 
+          userId: targetUserId,
+          url: window.location.href,
+        };
+        
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message,
+          url: window.location.href,
+        };
+      }
+    },
+    args: [message, userId],
   });
   
   return { id, ...result[0].result };

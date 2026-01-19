@@ -254,6 +254,97 @@ Example: "return document.querySelectorAll('.activity').length"`,
       required: ['book_cmid'],
     },
   },
+  // -----------------------------
+  // Section/Topic CRUD operations
+  // -----------------------------
+  {
+    name: 'get_course_sections',
+    description: `Get all section IDs and names from a course.
+    
+Returns a list of sections with their IDs (for use with edit_section) and current names.
+Requires editing mode to be enabled to see edit links.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'edit_section',
+    description: `Edit a course section/topic name and optionally its summary.
+    
+Navigate to the section edit page, set the custom name, and save.
+Use this to rename course topics to match your syllabus.
+
+Example: edit_section(section_id=1224362, name="Week 2: Understanding Users")`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        section_id: { type: 'number', description: 'The Moodle section ID (from editsection.php?id=...).' },
+        name: { type: 'string', description: 'The new section/topic name.' },
+        summary: { type: 'string', description: 'Optional HTML summary/description for the section.' },
+      },
+      required: ['section_id', 'name'],
+    },
+  },
+  {
+    name: 'add_section',
+    description: `Add a new section/topic to a course.
+    
+Navigates to the course with editing enabled and clicks "Add topics" to create new sections.
+Note: Moodle adds sections at the end of the course.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+        count: { type: 'number', description: 'Number of sections to add. Defaults to 1.', default: 1 },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
+    name: 'delete_section',
+    description: `Delete a course section/topic.
+    
+WARNING: This will delete the section and ALL activities within it.
+Navigates to the section and clicks the delete option.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        section_id: { type: 'number', description: 'The Moodle section ID to delete.' },
+        confirm: { type: 'boolean', description: 'Must be true to confirm deletion.', default: false },
+      },
+      required: ['section_id', 'confirm'],
+    },
+  },
+  {
+    name: 'hide_section',
+    description: `Hide or show a course section/topic from students.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+        section_id: { type: 'number', description: 'The Moodle section ID.' },
+        hidden: { type: 'boolean', description: 'True to hide, false to show.' },
+      },
+      required: ['course_id', 'section_id', 'hidden'],
+    },
+  },
+  {
+    name: 'move_section',
+    description: `Move a section to a different position in the course.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+        section_id: { type: 'number', description: 'The Moodle section ID to move.' },
+        position: { type: 'number', description: 'The new position (1-based index).' },
+      },
+      required: ['course_id', 'section_id', 'position'],
+    },
+  },
 
   // -----------------------------
   // Existing higher-level tools

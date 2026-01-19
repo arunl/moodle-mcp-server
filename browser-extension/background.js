@@ -183,6 +183,10 @@ async function handleCommand(command) {
         return await handleExtractAddableSections(id, params, tab);
       case 'extract_forum_discussions':
         return await handleExtractForumDiscussions(id, params, tab);
+      case 'extract_course_sections':
+        return await handleExtractCourseSections(id, params, tab);
+      case 'setEditor':
+        return await handleSetEditor(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -484,6 +488,106 @@ async function handleExtractForumDiscussions(id, params, tab) {
         },
       };
     },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleExtractCourseSections(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const sections = [];
+      
+      // Find all sections on the course page
+      const sectionElements = document.querySelectorAll('.section, [data-sectionid], li.section');
+      
+      sectionElements.forEach((section) => {
+        // Get section ID from data attribute or from edit link
+        let sectionId = section.getAttribute('data-sectionid');
+        
+        // Get section name
+        const nameEl = section.querySelector('.sectionname, .section-title, h3.sectionname');
+        const name = nameEl ? nameEl.textContent.trim() : null;
+        
+        // Try to find edit link to get section ID
+        const editLink = section.querySelector('a[href*="editsection.php"]');
+        if (editLink && !sectionId) {
+          const href = editLink.getAttribute('href');
+          const idMatch = href.match(/id=(\d+)/);
+          if (idMatch) {
+            sectionId = idMatch[1];
+          }
+        }
+        
+        // Get section number from class or ID
+        const sectionNum = section.id?.match(/section-(\d+)/)?.[1] || 
+                          section.getAttribute('data-sectionnum') ||
+                          null;
+        
+        if (sectionId || name) {
+          sections.push({
+            sectionId: sectionId ? parseInt(sectionId) : null,
+            sectionNum: sectionNum ? parseInt(sectionNum) : null,
+            name: name || `Section ${sectionNum || 'Unknown'}`,
+            editUrl: editLink ? editLink.href : null,
+          });
+        }
+      });
+      
+      // Remove duplicates by sectionId
+      const uniqueSections = sections.filter((s, i, arr) => 
+        !s.sectionId || arr.findIndex(x => x.sectionId === s.sectionId) === i
+      );
+      
+      return {
+        success: true,
+        data: {
+          sections: uniqueSections,
+          count: uniqueSections.length,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
+}
+
+async function handleSetEditor(id, params, tab) {
+  const { htmlContent, editorId } = params;
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (content, targetEditorId) => {
+      // Find the editor textarea
+      let textarea;
+      if (targetEditorId) {
+        textarea = document.getElementById(targetEditorId);
+      } else {
+        // Find first plausible editor
+        textarea = document.querySelector('textarea[id*="editor"], textarea[id*="summary"], textarea[name*="summary"]');
+      }
+      
+      if (!textarea) {
+        return { success: false, error: 'No editor textarea found' };
+      }
+      
+      // Set the textarea value
+      textarea.value = content;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      // Try to update the contenteditable div if using Atto/TinyMCE
+      const editorId = textarea.id;
+      const editableDiv = document.querySelector(`#${editorId}editable, [data-region="text"] [contenteditable="true"]`);
+      if (editableDiv) {
+        editableDiv.innerHTML = content;
+      }
+      
+      return { success: true };
+    },
+    args: [htmlContent, editorId],
   });
   
   return { id, ...result[0].result };

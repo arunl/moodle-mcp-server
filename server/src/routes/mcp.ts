@@ -718,6 +718,57 @@ async function handleToolCall(
         result = { success: true, assignmentId: args.assignment_id, userId: args.user_id, newDueDate: args.new_due_date };
         break;
 
+      // -----------------------------
+      // Generic Activity Tools
+      // -----------------------------
+      case 'find_activity':
+        // Navigate to the course page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/view.php?id=${args.course_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.course-content, .section', timeout: 5000 });
+        
+        // Extract activities with optional filters
+        result = await sendBrowserCommand(userId, 'extract_activities', {
+          namePattern: args.name_pattern,
+          activityType: args.activity_type,
+          sectionNum: args.section_num,
+        });
+        break;
+
+      case 'edit_activity':
+        // Navigate to the edit page for any activity type
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/modedit.php?update=${args.activity_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
+        result = { 
+          success: true, 
+          activityId: args.activity_id,
+          message: 'Edit page loaded. Use set_activity_date, type_text, click_element to modify settings, then save_activity.',
+        };
+        break;
+
+      case 'set_activity_date':
+        // Set a date field on the current activity edit form
+        result = await sendBrowserCommand(userId, 'set_activity_date', {
+          fieldName: args.field_name,
+          date: args.date,
+          enabled: args.enabled !== false,
+        });
+        break;
+
+      case 'save_activity':
+        // Click the appropriate save button
+        const saveSelector = args.return_to_course !== false
+          ? '#id_submitbutton, input[type="submit"][value*="Save and return"], button[type="submit"]:first-of-type'
+          : '#id_submitbutton2, input[type="submit"][value*="Save and display"]';
+        
+        await sendBrowserCommand(userId, 'click', { selector: saveSelector });
+        await sendBrowserCommand(userId, 'wait', { selector: '.course-content, .section, .activity-header', timeout: 10000 });
+        result = { success: true, message: 'Activity saved' };
+        break;
+
       default:
         return {
           jsonrpc: '2.0',

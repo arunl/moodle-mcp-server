@@ -344,6 +344,126 @@ async function handleToolCall(
         result = await sendBrowserCommand(userId, 'extract', {});
         break;
 
+      // -----------------------------
+      // Section/Topic CRUD operations
+      // -----------------------------
+      case 'get_course_sections':
+        // Enable editing mode to see edit links
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/view.php?id=${args.course_id}&notifyeditingon=1`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        // Extract section info using CSP-safe handler
+        result = await sendBrowserCommand(userId, 'extract_course_sections', {});
+        break;
+
+      case 'edit_section':
+        // Navigate to section edit page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/editsection.php?id=${args.section_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
+        
+        // Enable custom name by clicking the checkbox
+        await sendBrowserCommand(userId, 'click', {
+          selector: 'input[name="name_customize"], input[id*="name"][type="checkbox"]',
+        });
+        
+        // Type the new section name
+        await sendBrowserCommand(userId, 'type', {
+          selector: 'input[name="name_value"], input[id*="name_value"]',
+          text: args.name,
+          clearFirst: true,
+        });
+        
+        // If summary provided, set it in the editor
+        if (args.summary) {
+          await sendBrowserCommand(userId, 'setEditor', {
+            htmlContent: args.summary,
+          });
+        }
+        
+        // Click save
+        await sendBrowserCommand(userId, 'click', {
+          selector: 'input[type="submit"][value="Save changes"], button[type="submit"], #id_submitbutton',
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        result = { success: true, sectionId: args.section_id, name: args.name };
+        break;
+
+      case 'add_section':
+        // Enable editing mode
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/view.php?id=${args.course_id}&notifyeditingon=1`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        
+        // Click "Add topics" link (may vary by Moodle theme/version)
+        const addCount = args.count || 1;
+        for (let i = 0; i < addCount; i++) {
+          await sendBrowserCommand(userId, 'click', {
+            selector: 'a[data-action="addSection"], .add-sections a, a.add-sections, [data-action="increaseSections"]',
+          });
+          // Wait briefly for section to be added
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        result = { success: true, courseId: args.course_id, sectionsAdded: addCount };
+        break;
+
+      case 'delete_section':
+        if (!args.confirm) {
+          result = { error: 'Deletion requires confirm=true to prevent accidental data loss.' };
+          break;
+        }
+        // Navigate to section delete confirmation
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/editsection.php?id=${args.section_id}&delete=1`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
+        
+        // Click confirm/delete button
+        await sendBrowserCommand(userId, 'click', {
+          selector: 'button[type="submit"], input[type="submit"][value="Delete"], .btn-danger',
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        result = { success: true, sectionId: args.section_id, deleted: true };
+        break;
+
+      case 'hide_section':
+        // Navigate to course with editing enabled
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/view.php?id=${args.course_id}&notifyeditingon=1`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        
+        // Find and click the hide/show toggle for the section
+        const visibilityAction = args.hidden ? 'sectionHide' : 'sectionShow';
+        await sendBrowserCommand(userId, 'click', {
+          selector: `[data-sectionid="${args.section_id}"] [data-action="${visibilityAction}"], .section-${args.section_id} [data-action="${visibilityAction}"]`,
+        });
+        result = { success: true, sectionId: args.section_id, hidden: args.hidden };
+        break;
+
+      case 'move_section':
+        // Moving sections typically requires drag-and-drop or AJAX
+        // Use the move dropdown if available
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/view.php?id=${args.course_id}&notifyeditingon=1`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        
+        // Click the move icon/dropdown for the section
+        await sendBrowserCommand(userId, 'click', {
+          selector: `[data-sectionid="${args.section_id}"] [data-action="moveSection"], .section [data-action="moveSection"]`,
+        });
+        // Select position - this varies by Moodle version
+        result = { 
+          note: 'Section move initiated. Manual position selection may be required.',
+          sectionId: args.section_id, 
+          targetPosition: args.position 
+        };
+        break;
+
       default:
         return {
           jsonrpc: '2.0',

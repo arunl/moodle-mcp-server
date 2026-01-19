@@ -172,7 +172,13 @@ export class ConnectionManager {
 // Browser command interface
 export interface BrowserCommand {
   id: string;
-  action: 'navigate' | 'click' | 'type' | 'extract' | 'screenshot' | 'evaluate' | 'wait';
+  action: 
+    | 'navigate' | 'click' | 'type' | 'extract' | 'screenshot' | 'evaluate' | 'wait'
+    // Moodle-specific extraction actions (CSP-safe, no eval)
+    | 'extract_participants' | 'extract_editing_status' | 'extract_addable_sections' 
+    | 'extract_forum_discussions' | 'extract_course_sections'
+    // Editor actions
+    | 'setEditor';
   params: Record<string, unknown>;
 }
 

@@ -612,6 +612,32 @@ Clicks the "Save and return to course" or "Save and display" button.`,
       required: [],
     },
   },
+  
+  // Forum tools
+  {
+    name: 'create_forum_post',
+    description: `Create a new discussion/announcement in a Moodle forum.
+    
+This tool navigates to the forum's new discussion page, fills in the subject and message, and submits the post.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        forum_id: {
+          type: 'number',
+          description: 'The internal forum ID (not cmid). You can find this from the forum_list_discussions tool or from forum URLs.',
+        },
+        subject: {
+          type: 'string',
+          description: 'The subject/title of the discussion.',
+        },
+        message: {
+          type: 'string',
+          description: 'The message content. Can include HTML formatting.',
+        },
+      },
+      required: ['forum_id', 'subject', 'message'],
+    },
+  },
 ];
 
 // Generate unique command ID

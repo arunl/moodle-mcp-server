@@ -769,6 +769,35 @@ async function handleToolCall(
         result = { success: true, message: 'Activity saved' };
         break;
 
+      case 'create_forum_post':
+        // Navigate to new discussion page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/forum/post.php?forum=${args.forum_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '#id_subject', timeout: 10000 });
+        
+        // Fill in subject
+        await sendBrowserCommand(userId, 'type', {
+          selector: '#id_subject',
+          text: args.subject,
+          clearFirst: true,
+        });
+        
+        // Fill in message using setEditor (CSP-safe)
+        await sendBrowserCommand(userId, 'setEditor', {
+          htmlContent: args.message,
+          editorId: 'id_message',
+        });
+        
+        // Submit the form
+        await sendBrowserCommand(userId, 'click', {
+          selector: '#id_submitbutton',
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.forumpost, .discussion-list', timeout: 10000 });
+        
+        result = { success: true, forumId: args.forum_id, subject: args.subject };
+        break;
+
       default:
         return {
           jsonrpc: '2.0',

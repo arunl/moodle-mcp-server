@@ -808,13 +808,15 @@ async function handleToolCall(
         
         // Extract discussions from the forum page
         const forumResult = await sendBrowserCommand(userId, 'extract_forum_discussions', {});
+        console.log('[analyze_forum] forumResult:', JSON.stringify(forumResult, null, 2));
+        // Result comes directly without 'data' wrapper from browser command
         const discussions: Array<{
           id: number;
           title: string;
           author: string;
           replyCount: number;
           url: string;
-        }> = forumResult?.data?.discussions || [];
+        }> = forumResult?.discussions || forumResult?.data?.discussions || [];
         
         // Track who started discussions and reply counts
         const discussionStarters = new Set<string>();
@@ -841,7 +843,8 @@ async function handleToolCall(
           
           // Extract replies
           const replyResult = await sendBrowserCommand(userId, 'extract_discussion_replies', {});
-          const replyData = replyResult?.data || {};
+          // Result may come directly or inside 'data' wrapper
+          const replyData = replyResult?.data || replyResult || {};
           
           // Count replies by user (excluding discussion starter for "replies to others")
           const discussionStarter = replyData.discussionStarter;
@@ -874,7 +877,8 @@ async function handleToolCall(
           await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
           
           const participantsResult = await sendBrowserCommand(userId, 'extract_participants', {});
-          const participants = participantsResult?.participants || [];
+          // Result may come directly or inside 'data' wrapper
+          const participants = participantsResult?.participants || participantsResult?.data?.participants || [];
           
           enrolledStudents = participants
             .filter((p: { role?: string; name: string }) => 

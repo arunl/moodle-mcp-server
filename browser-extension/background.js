@@ -1152,44 +1152,83 @@ async function handleExtractForumDiscussions(id, params, tab) {
       const discussions = [];
       const seenIds = new Set();
       
-      // Method 1: Find all discussion links directly (most reliable)
-      const allLinks = document.querySelectorAll('a[href*="/mod/forum/discuss.php?d="]');
+      // Find ALL links on the page and filter for discussion links
+      const allLinks = Array.from(document.querySelectorAll('a'));
       
       allLinks.forEach((link) => {
-        const href = link.href;
-        // Only get main discussion links (not parent= links which are reply references)
+        const href = link.href || '';
+        
+        // Check if this is a discussion link
+        if (!href.includes('discuss.php')) return;
+        if (!href.includes('d=')) return;
+        
+        // Skip reply/parent links
         if (href.includes('parent=')) return;
+        if (href.includes('pin=')) return;
         
         const discussionIdMatch = href.match(/d=(\d+)/);
         if (!discussionIdMatch) return;
         
         const discussionId = parseInt(discussionIdMatch[1]);
         if (seenIds.has(discussionId)) return;
-        seenIds.add(discussionId);
         
         const title = link.textContent.trim();
-        // Skip non-title links (dates, etc)
-        if (!title || title.match(/^\d{1,2}\s+\w{3}\s+\d{4}$/)) return;
+        
+        // Skip non-title links (dates, action links, etc)
+        if (!title) return;
+        if (title.match(/^\d{1,2}\s+\w{3}\s+\d{4}$/)) return; // Date format
+        if (title === 'Star this discussion') return;
+        if (title === 'Pin this discussion') return;
+        if (title === 'Lock this discussion') return;
+        
+        seenIds.add(discussionId);
         
         // Try to find the row/container this link is in
-        const row = link.closest('tr, .discussion-list-item, [data-discussionid]');
+        const row = link.closest('tr, .discussion-list-item, [data-discussionid], article');
         
         let author = null;
         let replyCount = 0;
         
         if (row) {
-          // Look for author info - usually has user profile link
-          const authorLinks = row.querySelectorAll('a[href*="/user/view.php"], a[href*="/user/profile.php"]');
+          // Look for author info - user profile links
+          const authorLinks = row.querySelectorAll('a[href*="user/view.php"], a[href*="user/profile.php"]');
           if (authorLinks.length > 0) {
-            // First user link is usually the author
             author = authorLinks[0].textContent.trim();
           }
           
-          // Look for reply count - usually a number in its own cell or span
-          const replyCell = row.querySelector('td:nth-last-child(2), .replies-count, [data-region="replies"]');
-          if (replyCell) {
-            const num = parseInt(replyCell.textContent.trim());
-            if (!isNaN(num)) replyCount = num;
+          // Look for reply count in various places
+          // Try specific selectors first
+          const replySelectors = [
+            '.replies-count',
+            '[data-region="replies"]',
+            'td.replies',
+          ];
+          
+          for (const sel of replySelectors) {
+            const el = row.querySelector(sel);
+            if (el) {
+              const num = parseInt(el.textContent.trim());
+              if (!isNaN(num)) {
+                replyCount = num;
+                break;
+              }
+            }
+          }
+          
+          // If no specific selector worked, look for standalone numbers in cells
+          if (replyCount === 0) {
+            const cells = row.querySelectorAll('td');
+            for (let i = cells.length - 1; i >= 0; i--) {
+              const text = cells[i].textContent.trim();
+              // Only accept pure numbers (not dates or other content)
+              if (/^\d+$/.test(text)) {
+                const num = parseInt(text);
+                if (num < 1000) {
+                  replyCount = num;
+                  break;
+                }
+              }
+            }
           }
         }
         
@@ -1202,54 +1241,8 @@ async function handleExtractForumDiscussions(id, params, tab) {
         });
       });
       
-      // Method 2: Try table body rows if method 1 didn't work well
-      if (discussions.length === 0) {
-        const rows = document.querySelectorAll('table tbody tr');
-        rows.forEach((row) => {
-          const titleLink = row.querySelector('a[href*="discuss.php"]');
-          if (!titleLink) return;
-          
-          const href = titleLink.href;
-          const discussionIdMatch = href.match(/d=(\d+)/);
-          if (!discussionIdMatch) return;
-          
-          const discussionId = parseInt(discussionIdMatch[1]);
-          if (seenIds.has(discussionId)) return;
-          seenIds.add(discussionId);
-          
-          const title = titleLink.textContent.trim();
-          
-          // Get cells
-          const cells = row.querySelectorAll('td');
-          let author = null;
-          let replyCount = 0;
-          
-          // Author usually in 2nd cell with user link
-          if (cells.length > 1) {
-            const authorLink = cells[1].querySelector('a[href*="user"]');
-            if (authorLink) {
-              author = authorLink.textContent.trim();
-            }
-          }
-          
-          // Replies usually in a later cell
-          for (let i = cells.length - 1; i >= 0; i--) {
-            const num = parseInt(cells[i].textContent.trim());
-            if (!isNaN(num) && num < 1000) {
-              replyCount = num;
-              break;
-            }
-          }
-          
-          discussions.push({
-            id: discussionId,
-            title,
-            author,
-            replyCount,
-            url: href,
-          });
-        });
-      }
+      // Sort by discussion ID descending (newest first)
+      discussions.sort((a, b) => b.id - a.id);
       
       return {
         success: true,

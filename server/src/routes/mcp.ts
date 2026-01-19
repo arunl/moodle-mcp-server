@@ -283,11 +283,23 @@ async function handleToolCall(
         break;
 
       case 'enable_editing':
+        // First navigate to course to get sesskey
         await sendBrowserCommand(userId, 'navigate', {
-          url: `/course/view.php?id=${args.course_id}&notifyeditingon=1`,
+          url: `/course/view.php?id=${args.course_id}`,
         });
-        await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 10000 });
-        // Use CSP-safe dedicated handler instead of evaluate
+        await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 5000 });
+        
+        // Get sesskey for edit action
+        const editSesskey = await sendBrowserCommand(userId, 'extract_sesskey', {});
+        if (editSesskey?.sesskey) {
+          // Enable editing with sesskey
+          await sendBrowserCommand(userId, 'navigate', {
+            url: `/course/view.php?id=${args.course_id}&sesskey=${editSesskey.sesskey}&edit=on`,
+          });
+          await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 5000 });
+        }
+        
+        // Use CSP-safe dedicated handler to check status
         result = await sendBrowserCommand(userId, 'extract_editing_status', {});
         break;
 
@@ -415,15 +427,25 @@ async function handleToolCall(
           result = { error: 'Deletion requires confirm=true to prevent accidental data loss.' };
           break;
         }
-        // Navigate to section delete confirmation
-        await sendBrowserCommand(userId, 'navigate', {
-          url: `/course/editsection.php?id=${args.section_id}&delete=1`,
-        });
-        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
         
-        // Click confirm/delete button
+        // First get sesskey from current page
+        const sectionSessKeyResult = await sendBrowserCommand(userId, 'extract_sesskey', {});
+        const sectionSesskey = sectionSessKeyResult?.sesskey;
+        
+        if (!sectionSesskey) {
+          result = { error: 'Could not extract session key. Make sure you are logged in.' };
+          break;
+        }
+        
+        // Navigate to section delete confirmation with sesskey
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/course/editsection.php?id=${args.section_id}&sr=0&delete=1&sesskey=${sectionSesskey}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.buttons form', timeout: 5000 });
+        
+        // Click the "Yes" confirm button (btn-primary), not the "No" cancel button
         await sendBrowserCommand(userId, 'click', {
-          selector: 'button[type="submit"], input[type="submit"][value="Delete"], .btn-danger',
+          selector: 'button.btn-primary[type="submit"], .singlebutton form[method="post"] button[type="submit"]',
         });
         await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
         result = { success: true, sectionId: args.section_id, deleted: true };
@@ -610,16 +632,55 @@ async function handleToolCall(
           result = { error: 'Deletion requires confirm=true to prevent accidental data loss.' };
           break;
         }
-        await sendBrowserCommand(userId, 'navigate', {
-          url: `/course/mod.php?delete=${args.assignment_id}`,
-        });
-        await sendBrowserCommand(userId, 'wait', { selector: 'form', timeout: 5000 });
         
-        // Click confirm delete button
-        await sendBrowserCommand(userId, 'click', {
-          selector: 'button[type="submit"], input[type="submit"]',
+        // First, get the course ID from the assignment page and enable editing
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/assign/view.php?id=${args.assignment_id}`,
         });
-        await sendBrowserCommand(userId, 'wait', { selector: '.section', timeout: 5000 });
+        await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 5000 });
+        
+        // Extract sesskey and course ID from the page
+        const deleteSesskeyResult = await sendBrowserCommand(userId, 'extract_sesskey', {});
+        const deleteSesskey = deleteSesskeyResult?.sesskey;
+        
+        if (!deleteSesskey) {
+          result = { error: 'Could not extract session key. Make sure you are logged in.' };
+          break;
+        }
+        
+        // Extract course ID from the page for enabling editing
+        const courseIdResult = await sendBrowserCommand(userId, 'extract_course_id', {});
+        const courseId = courseIdResult?.courseId;
+        
+        if (courseId) {
+          // Enable editing mode first (requires sesskey)
+          await sendBrowserCommand(userId, 'navigate', {
+            url: `/course/view.php?id=${courseId}&sesskey=${deleteSesskey}&edit=on`,
+          });
+          await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 5000 });
+          
+          // Re-extract sesskey after navigation (might have changed)
+          const newSesskeyResult = await sendBrowserCommand(userId, 'extract_sesskey', {});
+          const newSesskey = newSesskeyResult?.sesskey || deleteSesskey;
+          
+          // Navigate to delete page with sesskey
+          await sendBrowserCommand(userId, 'navigate', {
+            url: `/course/mod.php?sr=0&delete=${args.assignment_id}&sesskey=${newSesskey}`,
+          });
+        } else {
+          // Fallback: try delete directly
+          await sendBrowserCommand(userId, 'navigate', {
+            url: `/course/mod.php?sr=0&delete=${args.assignment_id}&sesskey=${deleteSesskey}`,
+          });
+        }
+        
+        await sendBrowserCommand(userId, 'wait', { selector: '.buttons form', timeout: 5000 });
+        
+        // Click the "Yes" confirm button (btn-primary), not the "No" cancel button (btn-secondary)
+        await sendBrowserCommand(userId, 'click', {
+          selector: 'button.btn-primary[type="submit"], .singlebutton form[method="post"] button[type="submit"]',
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.section, .course-content', timeout: 5000 });
         result = { success: true, assignmentId: args.assignment_id, deleted: true };
         break;
 

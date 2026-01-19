@@ -189,6 +189,11 @@ async function handleCommand(command) {
         return await handleSetEditor(id, params, tab);
       case 'set_moodle_date':
         return await handleSetMoodleDate(id, params, tab);
+      // Session/auth handlers
+      case 'extract_sesskey':
+        return await handleExtractSesskey(id, params, tab);
+      case 'extract_course_id':
+        return await handleExtractCourseId(id, params, tab);
       // Assignment extraction handlers
       case 'extract_assignments':
         return await handleExtractAssignments(id, params, tab);
@@ -672,6 +677,92 @@ async function handleSetMoodleDate(id, params, tab) {
   });
   
   return { id, ...result[0].result };
+}
+
+async function handleExtractCourseId(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      // Method 1: Look in URL
+      const urlMatch = window.location.href.match(/[?&]id=(\d+)|course[=/](\d+)/);
+      if (urlMatch) {
+        const courseId = urlMatch[1] || urlMatch[2];
+        if (courseId) return { courseId: parseInt(courseId) };
+      }
+      
+      // Method 2: Look for course link in breadcrumbs or navigation
+      const courseLink = document.querySelector('a[href*="/course/view.php?id="]');
+      if (courseLink) {
+        const match = courseLink.href.match(/id=(\d+)/);
+        if (match) return { courseId: parseInt(match[1]) };
+      }
+      
+      // Method 3: Look in body data attributes
+      const body = document.body;
+      if (body.dataset.courseid) {
+        return { courseId: parseInt(body.dataset.courseid) };
+      }
+      
+      return null;
+    },
+  });
+  
+  if (result[0]?.result?.courseId) {
+    return { id, success: true, data: result[0].result };
+  }
+  
+  return { id, success: false, error: 'Could not find course ID' };
+}
+
+async function handleExtractSesskey(id, params, tab) {
+  // Try DOM-based extraction (works in ISOLATED world)
+  const domResult = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      // Method 1: Look for any link containing sesskey
+      const links = document.querySelectorAll('a[href*="sesskey"]');
+      for (const link of links) {
+        const match = link.href.match(/sesskey=([a-zA-Z0-9]+)/);
+        if (match) {
+          return { sesskey: match[1], method: 'link' };
+        }
+      }
+      
+      // Method 2: Look for hidden input with sesskey
+      const sessKeyInput = document.querySelector('input[name="sesskey"]');
+      if (sessKeyInput && sessKeyInput.value) {
+        return { sesskey: sessKeyInput.value, method: 'input' };
+      }
+      
+      return null;
+    },
+  });
+  
+  if (domResult[0]?.result?.sesskey) {
+    return { id, success: true, data: domResult[0].result };
+  }
+  
+  // Fallback: Try MAIN world to access window.M.cfg.sesskey
+  try {
+    const mainResult = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => {
+        if (window.M?.cfg?.sesskey) {
+          return { sesskey: window.M.cfg.sesskey, method: 'M.cfg' };
+        }
+        return null;
+      },
+    });
+    
+    if (mainResult[0]?.result?.sesskey) {
+      return { id, success: true, data: mainResult[0].result };
+    }
+  } catch (e) {
+    // MAIN world might fail, that's ok
+  }
+  
+  return { id, success: false, error: 'Could not find sesskey on page' };
 }
 
 async function handleExtractAssignments(id, params, tab) {

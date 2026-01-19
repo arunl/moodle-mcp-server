@@ -180,7 +180,9 @@ export interface BrowserCommand {
     // Assignment extraction actions
     | 'extract_assignments' | 'extract_assignment_details' | 'extract_submissions'
     // Editor and form actions
-    | 'setEditor' | 'set_moodle_date';
+    | 'setEditor' | 'set_moodle_date'
+    // Session/auth actions
+    | 'extract_sesskey' | 'extract_course_id';
   params: Record<string, unknown>;
 }
 

@@ -613,6 +613,38 @@ Clicks the "Save and return to course" or "Save and display" button.`,
     },
   },
   
+  // Bulk operations
+  {
+    name: 'bulk_shift_deadlines',
+    description: `Shift due dates for multiple assignments matching a pattern.
+    
+Finds all assignments matching the name pattern and shifts their due dates by the specified number of days.
+Returns a preview of changes before applying them unless confirm=true.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: {
+          type: 'number',
+          description: 'The Moodle course ID.',
+        },
+        name_pattern: {
+          type: 'string',
+          description: 'Regex pattern to match assignment names (e.g., "HW#" or "Quiz").',
+        },
+        days: {
+          type: 'number',
+          description: 'Number of days to shift (positive = later, negative = earlier).',
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'If true, applies the changes. If false (default), returns a preview.',
+          default: false,
+        },
+      },
+      required: ['course_id', 'name_pattern', 'days'],
+    },
+  },
+  
   // Forum tools
   {
     name: 'create_forum_post',

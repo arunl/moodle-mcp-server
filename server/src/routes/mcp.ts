@@ -1020,6 +1020,25 @@ async function handleToolCall(
         break;
 
       case 'analyze_feedback':
+        // First, get enrolled STUDENTS to filter results properly
+        // (Moodle's feedback lists include admins, managers, instructors etc.)
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/user/index.php?id=${args.course_id}&perpage=5000&treset=1`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
+        
+        const fbParticipantsResult = await sendBrowserCommand(userId, 'extract_participants', {});
+        const fbAllParticipants = fbParticipantsResult?.participants || [];
+        
+        // Build a set of student names (lowercase for comparison)
+        const feedbackExcludeSet = new Set<string>((args.exclude_users || []).map((u: string) => u.toLowerCase()));
+        const studentSet = new Map<string, { name: string; userId: number }>();
+        fbAllParticipants.forEach((p: { name: string; userId: number; role: string }) => {
+          if (p.role?.toLowerCase() === 'student' && !feedbackExcludeSet.has(p.name?.toLowerCase())) {
+            studentSet.set(p.name?.toLowerCase(), { name: p.name, userId: p.userId });
+          }
+        });
+        
         // Navigate to feedback responses page (showall=1 to get all entries)
         await sendBrowserCommand(userId, 'navigate', {
           url: `/mod/feedback/show_entries.php?id=${args.feedback_cmid}&showall=1`,
@@ -1035,41 +1054,38 @@ async function handleToolCall(
           anonymous: boolean;
         }> = feedbackResult?.responses || [];
         
-        // Get respondent names
-        const feedbackExcludeSet = new Set<string>((args.exclude_users || []).map((u: string) => u.toLowerCase()));
+        // Filter to only include STUDENTS and track who responded
+        const respondentNameSet = new Set<string>();
         const respondentList = feedbackResponses
-          .filter((r) => r.name && !r.anonymous && !feedbackExcludeSet.has(r.name.toLowerCase()))
-          .map((r) => ({ name: r.name, userId: r.userId, date: r.date }));
+          .filter((r) => r.name && !r.anonymous && studentSet.has(r.name.toLowerCase()))
+          .map((r) => {
+            respondentNameSet.add(r.name.toLowerCase());
+            return { 
+              name: r.name, 
+              userId: r.userId || studentSet.get(r.name.toLowerCase())?.userId, 
+              date: r.date 
+            };
+          });
         
-        // Now navigate to non-respondents view (Moodle has this built-in!)
-        await sendBrowserCommand(userId, 'navigate', {
-          url: `/mod/feedback/show_entries.php?id=${args.feedback_cmid}&do_show=shownonrespondents`,
+        // Compute non-respondents as: enrolled students - respondents
+        // This is more reliable than Moodle's buggy non-respondents view
+        const filteredNonRespondents: Array<{ name: string; userId: number }> = [];
+        studentSet.forEach((student, nameLower) => {
+          if (!respondentNameSet.has(nameLower)) {
+            filteredNonRespondents.push(student);
+          }
         });
-        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
         
-        // Extract non-respondents
-        const nonRespondentsResult = await sendBrowserCommand(userId, 'extract_feedback_nonrespondents', {});
-        const fbNonRespondents: Array<{
-          name: string;
-          userId?: number;
-          status: string;
-        }> = nonRespondentsResult?.nonRespondents || [];
-        
-        // Filter out excluded users
-        const filteredNonRespondents = fbNonRespondents.filter(
-          (nr) => !feedbackExcludeSet.has(nr.name?.toLowerCase())
-        );
-        
-        const totalStudents = respondentList.length + filteredNonRespondents.length;
+        const totalStudents = studentSet.size;
         
         result = {
           feedbackCmid: args.feedback_cmid,
+          totalEnrolledStudents: totalStudents,
           totalResponses: respondentList.length,
           respondents: respondentList,
           respondentCount: respondentList.length,
           nonRespondents: filteredNonRespondents,
           nonRespondentCount: filteredNonRespondents.length,
-          totalStudents,
           responseRate: totalStudents > 0 
             ? `${Math.round((respondentList.length / totalStudents) * 100)}%`
             : 'N/A',

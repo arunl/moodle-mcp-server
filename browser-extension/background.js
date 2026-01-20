@@ -213,6 +213,8 @@ async function handleCommand(command) {
         return await handleExtractDiscussionReplies(id, params, tab);
       case 'extract_feedback_responses':
         return await handleExtractFeedbackResponses(id, params, tab);
+      case 'extract_feedback_nonrespondents':
+        return await handleExtractFeedbackNonrespondents(id, params, tab);
       case 'send_moodle_message':
         return await handleSendMoodleMessage(id, params, tab);
       default:
@@ -1450,81 +1452,93 @@ async function handleExtractDiscussionReplies(id, params, tab) {
 
 // Extract feedback activity responses
 async function handleExtractFeedbackResponses(id, params, tab) {
+  console.log('[MoodleMCP] handleExtractFeedbackResponses starting...');
   const result = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: () => {
       const responses = [];
+      const seenUsers = new Set();
       
-      // Try to find responses in the show_entries.php table
-      // Moodle feedback shows responses in a table with columns like: Name, Time, etc.
-      const tables = document.querySelectorAll('table');
+      // Strategy 1: Find all user links with associated date links
+      // In Moodle feedback responses, users appear as links to /user/view.php
+      // and dates appear as links to show_entries.php with showcompleted parameter
+      const userLinks = document.querySelectorAll('a[href*="/user/view.php"]');
+      console.log('[MoodleMCP] Found user links:', userLinks.length);
       
-      for (const table of tables) {
-        const rows = table.querySelectorAll('tbody tr');
+      userLinks.forEach((link) => {
+        const href = link.getAttribute('href');
+        const userIdMatch = href.match(/id=(\d+)/);
+        if (!userIdMatch) return;
         
-        rows.forEach((row) => {
-          // Look for a user link in the row
-          const userLink = row.querySelector('a[href*="/user/view.php"], a[href*="user/view.php"]');
-          const cells = row.querySelectorAll('td');
-          
-          if (cells.length >= 2) {
-            let name = null;
-            let date = null;
-            let anonymous = false;
-            
-            // Check if anonymous response
-            const anonymousText = row.textContent.toLowerCase();
-            if (anonymousText.includes('anonymous') || anonymousText.includes('anonym')) {
-              anonymous = true;
-              name = 'Anonymous';
-            } else if (userLink) {
-              name = userLink.textContent.trim();
-              // Clean up avatar initials if present (e.g., "TATyler Addeo" -> "Tyler Addeo")
-              const initialsMatch = name.match(/^([A-Z]{2,3})([A-Z][a-z].*)$/);
-              if (initialsMatch) {
-                name = initialsMatch[2];
-              }
-            } else {
-              // Try to get name from first cell
-              const firstCell = cells[0];
-              const text = firstCell.textContent.trim();
-              if (text && !text.match(/^\d+$/)) {
-                name = text;
-              }
-            }
-            
-            // Look for date in cells (format like "Monday, 13 January 2025, 10:30 AM")
+        const userId = userIdMatch[1];
+        
+        // Skip if we've already seen this user (there may be multiple links per user)
+        if (seenUsers.has(userId)) return;
+        
+        // Get the name - skip if it's just initials (2-3 uppercase letters)
+        let name = link.textContent.trim();
+        if (name.match(/^[A-Z]{2,3}$/)) return; // Skip avatar initials
+        
+        // Clean up avatar initials if prefixed (e.g., "TATyler Addeo" -> "Tyler Addeo")
+        const initialsMatch = name.match(/^([A-Z]{2,3})([A-Z][a-z].*)$/);
+        if (initialsMatch) {
+          name = initialsMatch[2];
+        }
+        
+        // Skip empty names
+        if (!name || name.length < 2) return;
+        
+        seenUsers.add(userId);
+        
+        // Find the date - look for a nearby link with showcompleted parameter
+        // Check siblings, parent's siblings, or nearby elements
+        let date = null;
+        const row = link.closest('tr');
+        if (row) {
+          const dateLink = row.querySelector('a[href*="showcompleted"]');
+          if (dateLink) {
+            date = dateLink.textContent.trim();
+          } else {
+            // Try to find date text in cells
+            const cells = row.querySelectorAll('td');
             for (const cell of cells) {
-              const cellText = cell.textContent.trim();
-              // Match date patterns
-              if (cellText.match(/\d{1,2}\s+\w+\s+\d{4}|\d{4}-\d{2}-\d{2}|\w+day,?\s+\d{1,2}/i)) {
-                date = cellText;
+              const text = cell.textContent.trim();
+              if (text.match(/\w+day,?\s+\w+\s+\d{1,2},?\s+\d{4}/i)) {
+                date = text;
                 break;
               }
             }
-            
-            if (name) {
-              responses.push({
-                name,
-                date: date || null,
-                anonymous,
-              });
-            }
           }
-        });
+        }
         
-        // If we found responses in this table, don't look at other tables
-        if (responses.length > 0) {
+        responses.push({
+          name,
+          date: date || null,
+          userId: parseInt(userId),
+          anonymous: false,
+        });
+      });
+      
+      // Strategy 2: Check for anonymous entries heading
+      const headings = document.querySelectorAll('h4, h3, .h4, .h3');
+      let hasAnonymous = false;
+      for (const h of headings) {
+        if (h.textContent.toLowerCase().includes('anonymous')) {
+          hasAnonymous = true;
           break;
         }
       }
       
-      // Also check for "No entries" or similar message
-      const noEntriesEl = document.querySelector('.alert, .notification, .no-overflow');
-      const hasNoEntries = noEntriesEl && noEntriesEl.textContent.toLowerCase().includes('no entries');
+      // Get the count from page text (e.g., "Non anonymous entries (35)")
+      const countMatch = document.body.textContent.match(/entries\s*\((\d+)\)/i);
+      const reportedCount = countMatch ? parseInt(countMatch[1]) : responses.length;
       
-      // Get feedback info
-      const feedbackTitle = document.querySelector('h2, .page-title, [role="heading"]')?.textContent.trim();
+      // Check for "No entries" message
+      const pageText = document.body.textContent.toLowerCase();
+      const hasNoEntries = pageText.includes('no entries') && responses.length === 0;
+      
+      // Get feedback title
+      const feedbackTitle = document.querySelector('h2, .page-title')?.textContent.trim();
       const feedbackIdMatch = window.location.href.match(/id=(\d+)/);
       const feedbackId = feedbackIdMatch ? parseInt(feedbackIdMatch[1]) : null;
       
@@ -1535,24 +1549,116 @@ async function handleExtractFeedbackResponses(id, params, tab) {
           feedbackTitle,
           responses,
           responseCount: responses.length,
+          reportedCount,
           hasNoEntries,
+          hasAnonymous,
           url: window.location.href,
         },
       };
     },
   });
   
-  // Return data directly (without nested 'data' wrapper for consistency)
+  // Return data directly
+  console.log('[MoodleMCP] handleExtractFeedbackResponses raw result:', JSON.stringify(result[0]?.result, null, 2));
   const extractedData = result[0].result?.data || {};
-  return { 
+  const response = { 
     id, 
     success: true,
     responses: extractedData.responses || [],
     responseCount: extractedData.responseCount || 0,
+    reportedCount: extractedData.reportedCount || 0,
     feedbackId: extractedData.feedbackId,
     feedbackTitle: extractedData.feedbackTitle,
     url: extractedData.url,
   };
+  console.log('[MoodleMCP] handleExtractFeedbackResponses returning:', JSON.stringify(response, null, 2));
+  return response;
+}
+
+// Extract non-respondents from feedback "Show non-respondents" view
+async function handleExtractFeedbackNonrespondents(id, params, tab) {
+  console.log('[MoodleMCP] handleExtractFeedbackNonrespondents starting...');
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const nonRespondents = [];
+      const seenUsers = new Set();
+      
+      // The non-respondents table has simpler structure: User picture, Name, Status
+      // Find all user links
+      const userLinks = document.querySelectorAll('a[href*="/user/view.php"]');
+      console.log('[MoodleMCP] Non-respondents - Found user links:', userLinks.length);
+      
+      userLinks.forEach((link) => {
+        const href = link.getAttribute('href');
+        const userIdMatch = href.match(/id=(\d+)/);
+        if (!userIdMatch) return;
+        
+        const userId = userIdMatch[1];
+        if (seenUsers.has(userId)) return;
+        
+        // Get the name - skip if it's just initials
+        let name = link.textContent.trim();
+        if (name.match(/^[A-Z]{2,3}$/)) return;
+        
+        // Clean up avatar initials if prefixed
+        const initialsMatch = name.match(/^([A-Z]{2,3})([A-Z][a-z].*)$/);
+        if (initialsMatch) {
+          name = initialsMatch[2];
+        }
+        
+        if (!name || name.length < 2) return;
+        seenUsers.add(userId);
+        
+        // Find status in the same row
+        let status = 'Not started';
+        const row = link.closest('tr');
+        if (row) {
+          const cells = row.querySelectorAll('td');
+          for (const cell of cells) {
+            const text = cell.textContent.trim().toLowerCase();
+            if (text.includes('not started') || text.includes('in progress') || text.includes('incomplete')) {
+              status = cell.textContent.trim();
+              break;
+            }
+          }
+        }
+        
+        nonRespondents.push({
+          name,
+          userId: parseInt(userId),
+          status,
+        });
+      });
+      
+      // Get count from heading (e.g., "Non-respondent students (6)")
+      const countMatch = document.body.textContent.match(/non-respondent[s]?\s*(?:students?)?\s*\((\d+)\)/i);
+      const reportedCount = countMatch ? parseInt(countMatch[1]) : nonRespondents.length;
+      
+      return {
+        success: true,
+        data: {
+          nonRespondents,
+          count: nonRespondents.length,
+          reportedCount,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  console.log('[MoodleMCP] handleExtractFeedbackNonrespondents raw result:', JSON.stringify(result[0]?.result, null, 2));
+  const extractedData = result[0].result?.data || {};
+  const response = { 
+    id, 
+    success: true,
+    nonRespondents: extractedData.nonRespondents || [],
+    count: extractedData.count || 0,
+    reportedCount: extractedData.reportedCount || 0,
+    url: extractedData.url,
+  };
+  console.log('[MoodleMCP] handleExtractFeedbackNonrespondents returning:', JSON.stringify(response, null, 2));
+  return response;
 }
 
 // Send a message to a Moodle user via the messaging interface

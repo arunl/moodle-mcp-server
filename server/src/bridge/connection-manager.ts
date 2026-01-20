@@ -125,7 +125,9 @@ export class ConnectionManager {
         this.pendingCommands.delete(message.id);
         
         if (message.success) {
-          pending.resolve(message.data);
+          // Return either message.data (if wrapped) or the message itself (minus id/success)
+          const { id, success, ...responseData } = message;
+          pending.resolve(message.data || responseData);
         } else {
           pending.reject(new Error(message.error || 'Command failed'));
         }
@@ -179,6 +181,7 @@ export interface BrowserCommand {
     | 'extract_forum_discussions' | 'extract_course_sections'
     // Forum/Feedback analytics actions
     | 'extract_discussion_replies' | 'extract_feedback_responses'
+    | 'extract_feedback_nonrespondents'
     // Assignment extraction actions
     | 'extract_assignments' | 'extract_assignment_details' | 'extract_submissions'
     // Generic activity actions

@@ -1020,63 +1020,59 @@ async function handleToolCall(
         break;
 
       case 'analyze_feedback':
-        // Navigate to feedback responses page
+        // Navigate to feedback responses page (showall=1 to get all entries)
         await sendBrowserCommand(userId, 'navigate', {
-          url: `/mod/feedback/show_entries.php?id=${args.feedback_cmid}`,
+          url: `/mod/feedback/show_entries.php?id=${args.feedback_cmid}&showall=1`,
         });
-        await sendBrowserCommand(userId, 'wait', { selector: 'table, .no-overflow', timeout: 10000 });
+        await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
         
-        // Extract feedback responses
+        // Extract feedback responses (respondents)
         const feedbackResult = await sendBrowserCommand(userId, 'extract_feedback_responses', {});
         const feedbackResponses: Array<{
           name: string;
           date: string;
+          userId?: number;
           anonymous: boolean;
-        }> = feedbackResult?.responses || feedbackResult?.data?.responses || [];
+        }> = feedbackResult?.responses || [];
         
-        // Get respondent names (excluding anonymous)
+        // Get respondent names
         const feedbackExcludeSet = new Set<string>((args.exclude_users || []).map((u: string) => u.toLowerCase()));
-        const respondentNames = new Set<string>();
+        const respondentList = feedbackResponses
+          .filter((r) => r.name && !r.anonymous && !feedbackExcludeSet.has(r.name.toLowerCase()))
+          .map((r) => ({ name: r.name, userId: r.userId, date: r.date }));
         
-        feedbackResponses.forEach((r) => {
-          if (r.name && !r.anonymous && !feedbackExcludeSet.has(r.name.toLowerCase())) {
-            respondentNames.add(r.name);
-          }
-        });
-        
-        // Get enrolled students
+        // Now navigate to non-respondents view (Moodle has this built-in!)
         await sendBrowserCommand(userId, 'navigate', {
-          url: `/user/index.php?id=${args.course_id}&perpage=5000&treset=1`,
+          url: `/mod/feedback/show_entries.php?id=${args.feedback_cmid}&do_show=shownonrespondents`,
         });
         await sendBrowserCommand(userId, 'wait', { selector: 'table', timeout: 10000 });
         
-        const fbParticipantsResult = await sendBrowserCommand(userId, 'extract_participants', {});
-        const fbParticipants = fbParticipantsResult?.participants || fbParticipantsResult?.data?.participants || [];
+        // Extract non-respondents
+        const nonRespondentsResult = await sendBrowserCommand(userId, 'extract_feedback_nonrespondents', {});
+        const fbNonRespondents: Array<{
+          name: string;
+          userId?: number;
+          status: string;
+        }> = nonRespondentsResult?.nonRespondents || [];
         
-        // Filter to students only
-        const fbEnrolledStudents = fbParticipants
-          .filter((p: { role: string; name: string }) => 
-            p.role?.toLowerCase() === 'student' && !feedbackExcludeSet.has(p.name?.toLowerCase())
-          )
-          .map((p: { name: string; userId: number }) => ({ name: p.name, userId: p.userId }));
-        
-        // Find non-respondents
-        const fbNonRespondents = fbEnrolledStudents.filter(
-          (s: { name: string }) => !respondentNames.has(s.name)
+        // Filter out excluded users
+        const filteredNonRespondents = fbNonRespondents.filter(
+          (nr) => !feedbackExcludeSet.has(nr.name?.toLowerCase())
         );
+        
+        const totalStudents = respondentList.length + filteredNonRespondents.length;
         
         result = {
           feedbackCmid: args.feedback_cmid,
-          totalResponses: feedbackResponses.length,
-          respondents: Array.from(respondentNames),
-          respondentCount: respondentNames.size,
-          enrolledStudentCount: fbEnrolledStudents.length,
-          nonRespondents: fbNonRespondents,
-          nonRespondentCount: fbNonRespondents.length,
-          responseRate: fbEnrolledStudents.length > 0 
-            ? `${Math.round((respondentNames.size / fbEnrolledStudents.length) * 100)}%`
+          totalResponses: respondentList.length,
+          respondents: respondentList,
+          respondentCount: respondentList.length,
+          nonRespondents: filteredNonRespondents,
+          nonRespondentCount: filteredNonRespondents.length,
+          totalStudents,
+          responseRate: totalStudents > 0 
+            ? `${Math.round((respondentList.length / totalStudents) * 100)}%`
             : 'N/A',
-          responses: feedbackResponses.slice(0, 50), // Limit for response size
         };
         break;
 

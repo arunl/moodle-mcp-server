@@ -1,12 +1,16 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { getCookie, deleteCookie } from 'hono/cookie';
 import { serve } from '@hono/node-server';
 import { createNodeWebSocket } from '@hono/node-ws';
 import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 import mcpRoutes from './routes/mcp.js';
 import { connectionManager } from './bridge/connection-manager.js';
+import { verifyToken } from './auth/jwt.js';
+import { db, users } from './db/index.js';
+import { eq } from 'drizzle-orm';
 
 // Type declarations for Hono context variables
 declare module 'hono' {
@@ -270,12 +274,53 @@ app.get(
 
 // Landing page HTML
 app.get('/', (c) => {
+  const accessToken = getCookie(c, 'access_token');
+  // If logged in, redirect to dashboard
+  if (accessToken) {
+    return c.redirect('/dashboard');
+  }
   return c.html(landingPageHtml);
 });
 
 // Dashboard page
-app.get('/dashboard', (c) => {
-  return c.html(dashboardPageHtml);
+app.get('/dashboard', async (c) => {
+  const accessToken = getCookie(c, 'access_token');
+  // If not logged in, redirect to login
+  if (!accessToken) {
+    return c.redirect('/');
+  }
+  
+  // Verify token and get user info
+  try {
+    const payload = await verifyToken(accessToken);
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, payload.sub));
+    
+    if (!user) {
+      return c.redirect('/');
+    }
+    
+    // Return dashboard with user info injected
+    const dashboardWithUser = dashboardPageHtml.replace(
+      '<!-- USER_INFO_PLACEHOLDER -->',
+      `<div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+        ${user.picture ? `<img src="${user.picture}" alt="Profile" style="width: 48px; height: 48px; border-radius: 50%;">` : ''}
+        <div>
+          <div style="font-weight: 600; font-size: 1.1rem;">${user.name || 'User'}</div>
+          <div style="color: #a0a0b0; font-size: 0.9rem;">${user.email}</div>
+        </div>
+        <a href="/auth/logout" style="margin-left: auto; color: #ef4444; text-decoration: none; font-size: 0.9rem;">Sign Out</a>
+      </div>`
+    );
+    return c.html(dashboardWithUser);
+  } catch (error) {
+    // Token invalid, clear and redirect
+    deleteCookie(c, 'access_token');
+    deleteCookie(c, 'refresh_token');
+    return c.redirect('/');
+  }
 });
 
 // Start server
@@ -845,6 +890,7 @@ const dashboardPageHtml = `
     <div id="loading">Loading...</div>
     
     <div id="content" class="hidden">
+      <!-- USER_INFO_PLACEHOLDER -->
       <header>
         <div class="logo">🎓 Moodle<span>MCP</span></div>
         <div class="user-info">
@@ -862,7 +908,16 @@ const dashboardPageHtml = `
           <span class="status status-disconnected">● Disconnected</span>
         </div>
         <br />
-        <a href="/extension/moodle-mcp-extension.zip" class="btn btn-secondary">Download Extension</a>
+        <details style="margin-top: 1rem;">
+          <summary style="cursor: pointer; color: #f97316;">📦 Install Extension</summary>
+          <ol style="margin-top: 0.5rem; padding-left: 1.5rem; font-size: 0.9rem;">
+            <li>Open Chrome and go to <code>chrome://extensions/</code></li>
+            <li>Enable "Developer mode" (top right toggle)</li>
+            <li>Click "Load unpacked"</li>
+            <li>Select the <code>browser-extension</code> folder from the project</li>
+            <li>Click the extension icon and sign in</li>
+          </ol>
+        </details>
       </div>
       
       <div class="card">
@@ -953,7 +1008,7 @@ const dashboardPageHtml = `
         const data = await res.json();
         
         if (data.key) {
-          alert('API Key Created!\\n\\n' + data.key + '\\n\\nSave this key now - it will not be shown again!');
+          showApiKeyModal(data.key);
           loadDashboard();
         } else {
           alert('Error: ' + (data.error || 'Failed to create key'));
@@ -961,6 +1016,25 @@ const dashboardPageHtml = `
       } catch (error) {
         alert('Error creating API key');
       }
+    }
+    
+    function showApiKeyModal(key) {
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:1000;';
+      modal.innerHTML = \`
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:500px;width:90%;">
+          <h3 style="color:var(--success);margin-bottom:1rem;">✓ API Key Created!</h3>
+          <p style="color:var(--text-secondary);margin-bottom:1rem;font-size:0.9rem;">Save this key now - it will not be shown again!</p>
+          <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+            <code style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;word-break:break-all;user-select:all;cursor:text;">\${key}</code>
+          </div>
+          <div style="display:flex;gap:1rem;">
+            <button onclick="navigator.clipboard.writeText('\${key}');this.textContent='Copied!';this.style.background='var(--success)';" class="btn btn-primary" style="flex:1;">📋 Copy Key</button>
+            <button onclick="this.closest('div').parentElement.remove();" class="btn btn-secondary" style="flex:1;">Close</button>
+          </div>
+        </div>
+      \`;
+      document.body.appendChild(modal);
     }
     
     async function revokeKey(keyId) {
@@ -985,7 +1059,25 @@ const dashboardPageHtml = `
       window.location.href = '/';
     }
     
+    async function checkBrowserStatus() {
+      try {
+        const res = await fetch('/auth/browser-status');
+        const data = await res.json();
+        const statusEl = document.getElementById('browser-status');
+        if (data.connected) {
+          statusEl.innerHTML = '<span class="status status-connected">● Connected</span>';
+        } else {
+          statusEl.innerHTML = '<span class="status status-disconnected">● Disconnected</span>';
+        }
+      } catch (e) {
+        console.error('Error checking browser status:', e);
+      }
+    }
+    
     loadDashboard();
+    checkBrowserStatus();
+    // Poll browser status every 3 seconds
+    setInterval(checkBrowserStatus, 3000);
   </script>
 </body>
 </html>

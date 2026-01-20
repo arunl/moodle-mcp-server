@@ -1810,12 +1810,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.action === 'login') {
-    // Open login popup
+    // Open login popup and poll for auth completion
     chrome.windows.create({
       url: `${SERVER_URL}/auth/google?extension=true`,
       type: 'popup',
       width: 500,
       height: 600,
+    }, async (popupWindow) => {
+      let authCompleted = false;
+      
+      // Function to check auth and connect
+      const tryAuth = async () => {
+        if (authCompleted) return false;
+        try {
+          const response = await fetch(`${SERVER_URL}/auth/extension-check`, {
+            credentials: 'include'
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.accessToken) {
+              authCompleted = true;
+              await saveTokens(data.accessToken, data.refreshToken, data.user);
+              connectWebSocket();
+              console.log('[MoodleMCP] Auth successful via extension-check');
+              return true;
+            }
+          }
+        } catch (e) {
+          console.log('[MoodleMCP] Auth check error:', e);
+        }
+        return false;
+      };
+      
+      // Poll for auth completion - check both window state AND auth endpoint
+      const checkAuth = setInterval(async () => {
+        // Always try to get auth (in case OAuth completed but window still open)
+        const success = await tryAuth();
+        if (success) {
+          clearInterval(checkAuth);
+          // Try to close the popup window
+          try {
+            chrome.windows.remove(popupWindow.id);
+          } catch (e) {}
+          return;
+        }
+        
+        // Also check if window was closed
+        try {
+          chrome.windows.get(popupWindow.id, (w) => {
+            if (chrome.runtime.lastError || !w) {
+              // Window closed, do one final auth check
+              clearInterval(checkAuth);
+              tryAuth();
+            }
+          });
+        } catch (e) {
+          clearInterval(checkAuth);
+        }
+      }, 500); // Check every 500ms
+      
+      // Stop polling after 5 minutes
+      setTimeout(() => clearInterval(checkAuth), 5 * 60 * 1000);
     });
     sendResponse({ success: true });
     return true;

@@ -12,6 +12,7 @@ const auth = new Hono();
 auth.get('/google', async (c) => {
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
+  const isExtension = c.req.query('extension') === 'true';
   
   const url = google.createAuthorizationURL(state, codeVerifier, ['openid', 'email', 'profile']);
   
@@ -31,6 +32,19 @@ auth.get('/google', async (c) => {
     maxAge: 60 * 10,
     sameSite: 'Lax',
   });
+  
+  // Clear any stale extension cookie first, then set if needed
+  deleteCookie(c, 'oauth_extension', { path: '/' });
+  
+  if (isExtension) {
+    setCookie(c, 'oauth_extension', 'true', {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 10,
+      sameSite: 'Lax',
+    });
+  }
 
   return c.redirect(url.toString());
 });
@@ -99,7 +113,11 @@ auth.get('/google/callback', async (c) => {
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
     });
 
-    // Set auth cookies
+    // Check if this is an extension login
+    const isExtension = getCookie(c, 'oauth_extension') === 'true';
+    deleteCookie(c, 'oauth_extension');
+    
+    // Always set cookies (needed for /extension-check to work)
     setCookie(c, 'access_token', accessToken, {
       path: '/',
       httpOnly: true,
@@ -115,8 +133,47 @@ auth.get('/google/callback', async (c) => {
       maxAge: 60 * 60 * 24 * 30, // 30 days
       sameSite: 'Lax',
     });
+    
+    if (isExtension) {
+      // Return HTML page that tells user to close the window
+      // Extension will poll /extension-check to get tokens via cookies
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login Successful - Moodle MCP</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0f;
+      color: #f0f0f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .success { color: #10b981; font-size: 3rem; }
+    h1 { margin: 1rem 0 0.5rem; }
+    p { color: #a0a0b0; }
+  </style>
+</head>
+<body>
+  <div class="success">✓</div>
+  <h1>Login Successful!</h1>
+  <p>You can close this window now.</p>
+  <p style="font-size: 0.8rem; margin-top: 1rem;">The extension will automatically connect.</p>
+  <script>
+    // Auto-close after 3 seconds
+    setTimeout(() => window.close(), 3000);
+  </script>
+</body>
+</html>`;
+      return c.html(html);
+    }
 
-    // Redirect to dashboard
+    // Redirect to dashboard (cookies already set above)
     return c.redirect('/dashboard');
   } catch (error) {
     console.error('[Auth] OAuth error:', error);
@@ -154,11 +211,79 @@ auth.get('/me', async (c) => {
   }
 });
 
-// Logout
+// Logout (POST - API)
 auth.post('/logout', async (c) => {
   deleteCookie(c, 'access_token');
   deleteCookie(c, 'refresh_token');
   return c.json({ success: true });
+});
+
+// Logout (GET - redirect, for links)
+auth.get('/logout', async (c) => {
+  deleteCookie(c, 'access_token');
+  deleteCookie(c, 'refresh_token');
+  return c.redirect('/');
+});
+
+// Check if browser extension is connected for this user
+auth.get('/browser-status', async (c) => {
+  const accessToken = getCookie(c, 'access_token');
+  
+  if (!accessToken) {
+    return c.json({ connected: false, authenticated: false }, 200);
+  }
+
+  try {
+    const payload = await verifyToken(accessToken);
+    
+    // Import connection manager to check if user has active connection
+    const { connectionManager } = await import('../bridge/connection-manager.js');
+    const isConnected = connectionManager.isUserConnected(payload.sub);
+    
+    return c.json({ 
+      connected: isConnected, 
+      authenticated: true,
+      userId: payload.sub 
+    });
+  } catch (error) {
+    return c.json({ connected: false, authenticated: false }, 200);
+  }
+});
+
+// Extension auth check - returns tokens from cookies for extension to grab
+auth.get('/extension-check', async (c) => {
+  const accessToken = getCookie(c, 'access_token');
+  const refreshToken = getCookie(c, 'refresh_token');
+  
+  if (!accessToken) {
+    return c.json({ authenticated: false }, 200);
+  }
+
+  try {
+    const payload = await verifyToken(accessToken);
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, payload.sub));
+
+    if (!user) {
+      return c.json({ authenticated: false }, 200);
+    }
+
+    return c.json({
+      authenticated: true,
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+      }
+    });
+  } catch (error) {
+    return c.json({ authenticated: false }, 200);
+  }
 });
 
 // Token exchange endpoint for browser extension

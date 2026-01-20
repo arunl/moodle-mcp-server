@@ -617,7 +617,7 @@ const landingPageHtml = `
       <nav class="nav-links">
         <a href="#features">Features</a>
         <a href="#how-it-works">How it Works</a>
-        <a href="https://github.com/yourusername/moodle-mcp" target="_blank">GitHub</a>
+        <a href="#how-it-works">Documentation</a>
         <a href="/auth/google" class="btn btn-primary">Sign in with Google</a>
       </nav>
     </header>
@@ -708,7 +708,7 @@ const landingPageHtml = `
     </section>
     
     <footer>
-      <p>Moodle MCP is open source. Built for educators, by educators.</p>
+      <p>Moodle MCP · Built for educators, by educators.</p>
     </footer>
   </div>
 </body>

@@ -132,6 +132,15 @@ async function handleMcpRequest(
               'Browser Required: A browser with the Moodle MCP extension must be connected.',
               'Single User: Each API key connects to one browser session at a time.',
             ],
+            accessibility: [
+              'All HTML content MUST follow WCAG 2.1 accessibility guidelines.',
+              'Tables: Always use <caption> and <th scope="col/row"> for headers.',
+              'Headings: Maintain proper hierarchy (h2→h3→h4), never skip levels.',
+              'Links: Use descriptive text, indicate external links with "(opens in new tab)".',
+              'Images: Always include meaningful alt text.',
+              'Lists: Use semantic <ul>/<ol>, not manual bullets.',
+              'Color: Never rely solely on color to convey meaning.',
+            ],
           },
         },
       };

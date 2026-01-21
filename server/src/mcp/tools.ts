@@ -154,13 +154,24 @@ Returns:
     description: `Set HTML content in a Moodle rich text editor (Atto/TinyMCE).
     
 This tool uses JavaScript to directly set the underlying textarea and the visible contenteditable region.
-Use this for Book chapters, Forum posts, Assignment descriptions, Labels, etc.`,
+Use this for Book chapters, Forum posts, Assignment descriptions, Labels, etc.
+
+ACCESSIBILITY REQUIREMENTS - All HTML content MUST follow these guidelines:
+1. TABLES: Always include <caption> for table title, use <th scope="col"> for column headers, 
+   use <th scope="row"> for row headers. Never use tables for layout.
+2. HEADINGS: Use proper heading hierarchy (h2, h3, h4). Don't skip levels.
+3. LINKS: Use descriptive link text, not "click here" or "read more". 
+   For external links, indicate they open in new tab: "Guide (opens in new tab)"
+4. IMAGES: Always include meaningful alt text. Use alt="" for decorative images.
+5. LISTS: Use <ul>/<ol> for lists, not manual bullets or numbers.
+6. COLOR: Don't rely solely on color to convey meaning. Use text labels too.
+7. STRUCTURE: Use semantic HTML (<strong> not <b>, <em> not <i>).`,
     inputSchema: {
       type: 'object',
       properties: {
         html_content: {
           type: 'string',
-          description: 'The HTML content to set in the editor.',
+          description: 'The HTML content to set in the editor. MUST follow accessibility guidelines in tool description.',
         },
         editor_id: {
           type: 'string',
@@ -682,7 +693,19 @@ You can provide EITHER:
 - forum_id: The internal forum ID (from forum_list_discussions or post.php URLs)
 - forum_cmid: The course module ID (from view.php?id=... URLs) - the tool will auto-extract the forum_id
 
-Example: create_forum_post(forum_cmid=2618458, subject="Hello", message="<p>Test</p>")`,
+ACCESSIBILITY REQUIREMENTS for message content:
+1. TABLES: Include <caption>, use <th scope="col/row"> for headers
+2. HEADINGS: Use h3/h4 (h2 is post title), maintain hierarchy
+3. LINKS: Descriptive text, indicate external links "(opens in new tab)"
+4. LISTS: Use <ul>/<ol>, not manual bullets
+5. Don't rely on color alone to convey meaning
+
+Example with accessible table:
+<table>
+  <caption>Team Assignments</caption>
+  <thead><tr><th scope="col">Team</th><th scope="col">Members</th></tr></thead>
+  <tbody><tr><th scope="row">Alpha</th><td>John, Jane</td></tr></tbody>
+</table>`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -700,7 +723,7 @@ Example: create_forum_post(forum_cmid=2618458, subject="Hello", message="<p>Test
         },
         message: {
           type: 'string',
-          description: 'The message content. Can include HTML formatting.',
+          description: 'The message content (HTML). MUST follow accessibility guidelines above.',
         },
       },
       required: ['subject', 'message'],

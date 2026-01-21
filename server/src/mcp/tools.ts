@@ -255,7 +255,12 @@ Use this for Book chapters, Forum posts, Assignment descriptions, Labels, etc.`,
   },
   {
     name: 'forum_list_discussions',
-    description: 'List discussions (topic title + discussion id + URL) for a forum by its view id (mod/forum/view.php?id=...).',
+    description: `List discussions for a forum by its view id (mod/forum/view.php?id=...).
+    
+Returns:
+- discussions: Array of {id, title, author, replyCount, url}
+- forumId: The internal forum ID (for use with create_forum_post)
+- forumViewId: The cmid you provided`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -671,13 +676,23 @@ Returns a preview of changes before applying them unless confirm=true.`,
     name: 'create_forum_post',
     description: `Create a new discussion/announcement in a Moodle forum.
     
-This tool navigates to the forum's new discussion page, fills in the subject and message, and submits the post.`,
+This tool navigates to the forum's new discussion page, fills in the subject and message, and submits the post.
+
+You can provide EITHER:
+- forum_id: The internal forum ID (from forum_list_discussions or post.php URLs)
+- forum_cmid: The course module ID (from view.php?id=... URLs) - the tool will auto-extract the forum_id
+
+Example: create_forum_post(forum_cmid=2618458, subject="Hello", message="<p>Test</p>")`,
     inputSchema: {
       type: 'object',
       properties: {
         forum_id: {
           type: 'number',
-          description: 'The internal forum ID (not cmid). You can find this from the forum_list_discussions tool or from forum URLs.',
+          description: 'The internal forum ID (from post.php?forum=... URLs). Optional if forum_cmid is provided.',
+        },
+        forum_cmid: {
+          type: 'number',
+          description: 'The course module ID (from view.php?id=... URLs). If provided without forum_id, the tool will navigate to the forum and extract the internal forum_id automatically.',
         },
         subject: {
           type: 'string',
@@ -688,7 +703,7 @@ This tool navigates to the forum's new discussion page, fills in the subject and
           description: 'The message content. Can include HTML formatting.',
         },
       },
-      required: ['forum_id', 'subject', 'message'],
+      required: ['subject', 'message'],
     },
   },
   {

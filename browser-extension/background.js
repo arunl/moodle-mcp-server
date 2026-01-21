@@ -654,9 +654,19 @@ async function handleExtractCourseSections(id, params, tab) {
 async function handleSetEditor(id, params, tab) {
   const { htmlContent, editorId } = params;
   
+  // Encode HTML content as Base64 to avoid serialization issues with special characters
+  // This prevents "Value is unserializable" errors when HTML contains newlines, quotes, etc.
+  const encodedContent = btoa(unescape(encodeURIComponent(htmlContent)));
+  
+  // Ensure editorId is serializable (undefined is not serializable by Chrome's scripting API)
+  const safeEditorId = editorId || null;
+  
   const result = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: (content, targetEditorId) => {
+    func: (encodedContent, targetEditorId) => {
+      // Decode the Base64 content
+      const content = decodeURIComponent(escape(atob(encodedContent)));
+      
       // Find the editor textarea - Moodle uses various naming conventions:
       // - id_message_editor (forum posts)
       // - id_summary_editor (course summaries)
@@ -725,7 +735,7 @@ async function handleSetEditor(id, params, tab) {
       
       return { success: true, textareaId: textarea.id, editableDivFound: !!editableDiv };
     },
-    args: [htmlContent, editorId],
+    args: [encodedContent, safeEditorId],
   });
   
   return { id, ...result[0].result };
@@ -1442,12 +1452,50 @@ async function handleExtractForumDiscussions(id, params, tab) {
       // Sort by discussion ID descending (newest first)
       discussions.sort((a, b) => b.id - a.id);
       
+      // Extract the internal forum ID (needed for create_forum_post)
+      // This is different from the cmid (course module ID) and can be found in:
+      // 1. "Add discussion topic" link: post.php?forum=XXX
+      // 2. Subscribe link: subscribe.php?id=XXX (though this uses cmid)
+      // 3. View URL parameter: view.php?f=XXX (internal forum ID)
+      let forumId = null;
+      
+      // Check URL for f= parameter (direct forum ID)
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.has('f')) {
+        forumId = parseInt(urlParams.get('f'));
+      }
+      
+      // Look for "Add discussion" or post links that contain forum=XXX
+      if (!forumId) {
+        const postLinks = document.querySelectorAll('a[href*="post.php?forum="]');
+        for (const link of postLinks) {
+          const match = link.href.match(/forum=(\d+)/);
+          if (match) {
+            forumId = parseInt(match[1]);
+            break;
+          }
+        }
+      }
+      
+      // Look in form actions
+      if (!forumId) {
+        const forms = document.querySelectorAll('form[action*="post.php"]');
+        for (const form of forms) {
+          const forumInput = form.querySelector('input[name="forum"]');
+          if (forumInput) {
+            forumId = parseInt(forumInput.value);
+            break;
+          }
+        }
+      }
+      
       return {
         success: true,
         data: {
           discussions,
           count: discussions.length,
           url: window.location.href,
+          forumId,  // Internal forum ID for use with create_forum_post
           debug,
         },
       };

@@ -783,9 +783,38 @@ async function handleToolCall(
         break;
 
       case 'create_forum_post':
+        // Determine the forum ID - either provided directly or extracted from cmid
+        let forumIdToUse = args.forum_id;
+        
+        if (!forumIdToUse && args.forum_cmid) {
+          // Navigate to forum view page to extract the internal forum ID
+          await sendBrowserCommand(userId, 'navigate', {
+            url: `/mod/forum/view.php?id=${args.forum_cmid}`,
+            force: true,
+          });
+          await sendBrowserCommand(userId, 'wait', { 
+            selector: 'a[href*="discuss.php"], a[href*="post.php"]', 
+            timeout: 10000 
+          });
+          
+          // Extract forum ID from the page
+          const forumExtract = await sendBrowserCommand(userId, 'extract_forum_discussions', {});
+          forumIdToUse = forumExtract?.data?.forumId;
+          
+          if (!forumIdToUse) {
+            result = { success: false, error: 'Could not extract forum_id from the forum page. Please provide forum_id directly.' };
+            break;
+          }
+        }
+        
+        if (!forumIdToUse) {
+          result = { success: false, error: 'Either forum_id or forum_cmid must be provided.' };
+          break;
+        }
+        
         // Navigate to new discussion page (use force to dismiss any unsaved changes dialogs)
         await sendBrowserCommand(userId, 'navigate', {
-          url: `/mod/forum/post.php?forum=${args.forum_id}`,
+          url: `/mod/forum/post.php?forum=${forumIdToUse}`,
           force: true,
         });
         await sendBrowserCommand(userId, 'wait', { selector: '#id_subject', timeout: 10000 });
@@ -809,7 +838,7 @@ async function handleToolCall(
         });
         await sendBrowserCommand(userId, 'wait', { selector: '.forumpost, .discussion-list', timeout: 10000 });
         
-        result = { success: true, forumId: args.forum_id, subject: args.subject };
+        result = { success: true, forumId: forumIdToUse, subject: args.subject };
         break;
 
       case 'find_forum_discussion':

@@ -910,13 +910,17 @@ const dashboardPageHtml = `
         <br />
         <details style="margin-top: 1rem;">
           <summary style="cursor: pointer; color: #f97316;">📦 Install Extension</summary>
-          <ol style="margin-top: 0.5rem; padding-left: 1.5rem; font-size: 0.9rem;">
-            <li>Open Chrome and go to <code>chrome://extensions/</code></li>
-            <li>Enable "Developer mode" (top right toggle)</li>
-            <li>Click "Load unpacked"</li>
-            <li>Select the <code>browser-extension</code> folder from the project</li>
-            <li>Click the extension icon and sign in</li>
-          </ol>
+          <div style="margin-top: 0.75rem; padding: 1rem; background: var(--bg-secondary); border-radius: 8px;">
+            <p style="font-size: 0.9rem; margin-bottom: 0.75rem;"><strong>Option 1:</strong> Download from releases (coming soon)</p>
+            <p style="font-size: 0.9rem; margin-bottom: 0.75rem;"><strong>Option 2:</strong> Manual install:</p>
+            <ol style="padding-left: 1.5rem; font-size: 0.85rem; color: var(--text-secondary);">
+              <li>Get the <code>browser-extension</code> folder from the project</li>
+              <li>Open Chrome → <code>chrome://extensions/</code></li>
+              <li>Enable "Developer mode" (top right)</li>
+              <li>Click "Load unpacked" → select folder</li>
+              <li>Click extension icon and sign in</li>
+            </ol>
+          </div>
         </details>
       </div>
       
@@ -933,10 +937,27 @@ const dashboardPageHtml = `
       
       <div class="card">
         <h2>⚙️ MCP Configuration</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1rem;">Add this to your AI client's configuration:</p>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">Choose your AI client:</p>
+        
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+          <button class="btn btn-secondary" onclick="showConfig('claude')" id="btn-claude" style="flex:1; opacity: 0.6;">Claude Desktop</button>
+          <button class="btn btn-secondary" onclick="showConfig('cursor')" id="btn-cursor" style="flex:1; background: var(--accent); opacity: 1;">Cursor IDE</button>
+        </div>
         
         <div class="code-block">
           <pre id="mcp-config"></pre>
+        </div>
+        
+        <div id="cursor-note" style="margin-top: 1rem; padding: 0.75rem; background: rgba(255,107,53,0.1); border-radius: 8px; font-size: 0.85rem;">
+          <strong>Note:</strong> Cursor requires the <code>mcp-remote</code> bridge. 
+          <a href="https://github.com/arunlakhotia/moodle-mcp/tree/main/mcp-remote" target="_blank" style="color: var(--accent);">Download it here</a>, 
+          then update the path in the config above.
+        </div>
+        
+        <div id="claude-note" class="hidden" style="margin-top: 1rem; padding: 0.75rem; background: rgba(16,185,129,0.1); border-radius: 8px; font-size: 0.85rem;">
+          <strong>Config location:</strong><br/>
+          macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br/>
+          Windows: <code>%APPDATA%\\Claude\\claude_desktop_config.json</code>
         </div>
         
         <br />
@@ -980,10 +1001,8 @@ const dashboardPageHtml = `
           \`).join('');
         }
         
-        // Get MCP config
-        const configRes = await fetch('/api/mcp-config');
-        const config = await configRes.json();
-        document.getElementById('mcp-config').textContent = JSON.stringify(config.config, null, 2);
+        // Set up MCP config display
+        showConfig('cursor'); // Default to Cursor
         
         // Show content
         document.getElementById('loading').classList.add('hidden');
@@ -1008,7 +1027,9 @@ const dashboardPageHtml = `
         const data = await res.json();
         
         if (data.key) {
+          userApiKey = data.key;
           showApiKeyModal(data.key);
+          showConfig(currentConfigType); // Refresh config with new key
           loadDashboard();
         } else {
           alert('Error: ' + (data.error || 'Failed to create key'));
@@ -1052,6 +1073,60 @@ const dashboardPageHtml = `
       const config = document.getElementById('mcp-config').textContent;
       navigator.clipboard.writeText(config);
       alert('Configuration copied to clipboard!');
+    }
+    
+    let currentConfigType = 'cursor';
+    let serverUrl = window.location.origin;
+    let userApiKey = 'YOUR_API_KEY';
+    
+    function showConfig(type) {
+      currentConfigType = type;
+      const configEl = document.getElementById('mcp-config');
+      const cursorNote = document.getElementById('cursor-note');
+      const claudeNote = document.getElementById('claude-note');
+      const btnCursor = document.getElementById('btn-cursor');
+      const btnClaude = document.getElementById('btn-claude');
+      
+      if (type === 'cursor') {
+        configEl.textContent = JSON.stringify({
+          mcpServers: {
+            moodle: {
+              command: "npx",
+              args: ["tsx", "/path/to/mcp-remote/src/index.ts"],
+              env: {
+                MCP_SERVER_URL: serverUrl,
+                MCP_API_KEY: userApiKey
+              }
+            }
+          }
+        }, null, 2);
+        cursorNote.classList.remove('hidden');
+        claudeNote.classList.add('hidden');
+        btnCursor.style.opacity = '1';
+        btnCursor.style.background = 'var(--accent)';
+        btnClaude.style.opacity = '0.6';
+        btnClaude.style.background = 'var(--bg-secondary)';
+      } else {
+        configEl.textContent = JSON.stringify({
+          mcpServers: {
+            moodle: {
+              transport: {
+                type: "sse",
+                url: serverUrl + "/mcp/sse"
+              },
+              headers: {
+                Authorization: "Bearer " + userApiKey
+              }
+            }
+          }
+        }, null, 2);
+        cursorNote.classList.add('hidden');
+        claudeNote.classList.remove('hidden');
+        btnClaude.style.opacity = '1';
+        btnClaude.style.background = 'var(--accent)';
+        btnCursor.style.opacity = '0.6';
+        btnCursor.style.background = 'var(--bg-secondary)';
+      }
     }
     
     async function logout() {

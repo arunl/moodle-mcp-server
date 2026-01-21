@@ -179,7 +179,7 @@ export interface BrowserCommand {
     | 'navigate' | 'click' | 'type' | 'extract' | 'screenshot' | 'wait'
     // Moodle-specific extraction actions (CSP-safe, no eval)
     | 'extract_participants' | 'extract_editing_status' | 'extract_addable_sections' 
-    | 'extract_forum_discussions' | 'extract_course_sections'
+    | 'extract_forum_discussions' | 'extract_course_sections' | 'extract_courses'
     // Forum/Feedback analytics actions
     | 'extract_discussion_replies' | 'extract_feedback_responses'
     | 'extract_feedback_nonrespondents'

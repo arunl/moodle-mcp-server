@@ -322,7 +322,11 @@ async function handleToolCall(
 
       case 'forum_list_discussions':
         await sendBrowserCommand(userId, 'navigate', { url: `/mod/forum/view.php?id=${args.forum_view_id}` });
-        await sendBrowserCommand(userId, 'wait', { selector: 'table.forumheaderlist, [data-region="discussion-list"]', timeout: 10000 });
+        // Wait for any forum-related element (different Moodle versions use different selectors)
+        await sendBrowserCommand(userId, 'wait', { 
+          selector: 'table.forumheaderlist, [data-region="discussion-list"], .forumpost, a[href*="discuss.php?d="]', 
+          timeout: 10000 
+        });
         // Use CSP-safe dedicated handler instead of evaluate
         result = await sendBrowserCommand(userId, 'extract_forum_discussions', {});
         result = { forumViewId: args.forum_view_id, ...result };
@@ -342,12 +346,13 @@ async function handleToolCall(
       case 'get_courses':
         // Navigate to courses page and extract
         await sendBrowserCommand(userId, 'navigate', { url: '/my/courses.php' });
-        await sendBrowserCommand(userId, 'wait', { selector: '.course-listitem, .coursebox', timeout: 5000 });
-        result = await sendBrowserCommand(userId, 'extract', {
-          selectors: {
-            courses: '.course-listitem, .coursebox',
-          },
+        // Wait for any course-related element (different Moodle versions use different selectors)
+        await sendBrowserCommand(userId, 'wait', { 
+          selector: '.course-listitem, .coursebox, [data-region="course-content"], a[href*="course/view.php"]', 
+          timeout: 5000 
         });
+        // Use dedicated handler to extract courses
+        result = await sendBrowserCommand(userId, 'extract_courses', {});
         break;
 
       case 'get_course_content':

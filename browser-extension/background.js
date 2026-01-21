@@ -219,6 +219,8 @@ async function handleCommand(command) {
         return await handleSendMoodleMessage(id, params, tab);
       case 'extract_first_post_id':
         return await handleExtractFirstPostId(id, params, tab);
+      case 'extract_courses':
+        return await handleExtractCourses(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -1747,6 +1749,60 @@ async function handleExtractFeedbackNonrespondents(id, params, tab) {
   };
   console.log('[MoodleMCP] handleExtractFeedbackNonrespondents returning:', JSON.stringify(response, null, 2));
   return response;
+}
+
+// Extract courses from the My Courses page
+async function handleExtractCourses(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const courses = [];
+      const seenIds = new Set();
+      
+      // Find all course links on the page
+      // Modern Moodle: links to course/view.php in navigation or main content
+      const courseLinks = document.querySelectorAll('a[href*="course/view.php?id="]');
+      
+      courseLinks.forEach((link) => {
+        const href = link.getAttribute('href');
+        const idMatch = href.match(/id=(\d+)/);
+        if (!idMatch) return;
+        
+        const courseId = parseInt(idMatch[1]);
+        if (seenIds.has(courseId)) return;
+        
+        // Get course name from link text
+        let name = link.textContent.trim();
+        
+        // Skip if name is empty or too short (likely navigation element)
+        if (!name || name.length < 3) return;
+        
+        // Skip common non-course links
+        if (name.toLowerCase() === 'my courses') return;
+        if (name.toLowerCase() === 'more...') return;
+        if (name.toLowerCase() === 'view more') return;
+        
+        seenIds.add(courseId);
+        
+        courses.push({
+          id: courseId,
+          name: name,
+          url: link.href,
+        });
+      });
+      
+      return {
+        success: true,
+        data: {
+          courses,
+          count: courses.length,
+          url: window.location.href,
+        },
+      };
+    },
+  });
+  
+  return { id, ...result[0].result };
 }
 
 // Extract the first post ID from a forum discussion page (needed for delete)

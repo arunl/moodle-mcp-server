@@ -217,6 +217,8 @@ async function handleCommand(command) {
         return await handleExtractFeedbackNonrespondents(id, params, tab);
       case 'send_moodle_message':
         return await handleSendMoodleMessage(id, params, tab);
+      case 'extract_first_post_id':
+        return await handleExtractFirstPostId(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -228,11 +230,65 @@ async function handleCommand(command) {
 // Command handlers
 async function handleNavigate(id, params, tab) {
   let url = params.url;
+  const force = params.force || false;  // If true, dismiss unsaved changes first
   
   // If relative URL, use Moodle base from current tab
   if (url.startsWith('/')) {
     const tabUrl = new URL(tab.url);
     url = tabUrl.origin + url;
+  }
+  
+  // If force is true, try to dismiss any unsaved changes dialogs
+  // by resetting forms or clicking cancel buttons before navigating
+  if (force) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          // Strategy 1: Click any visible cancel button
+          const cancelSelectors = [
+            'input[type="button"][value="Cancel"]',
+            'button.btn-secondary[type="button"]',
+            'a.btn-cancel',
+            '.mform button[name="cancel"]',
+            '#id_cancel',
+          ];
+          for (const sel of cancelSelectors) {
+            const btn = document.querySelector(sel);
+            if (btn && btn.offsetParent !== null) { // Check if visible
+              btn.click();
+              return { cancelled: true };
+            }
+          }
+          
+          // Strategy 2: Reset all forms to clear dirty state
+          const forms = document.querySelectorAll('form');
+          forms.forEach(form => {
+            // Remove beforeunload handler by marking fields as clean
+            const inputs = form.querySelectorAll('input, textarea, select');
+            inputs.forEach(input => {
+              // Store current value as "original" to prevent dirty detection
+              input.defaultValue = input.value;
+              if (input.type === 'checkbox' || input.type === 'radio') {
+                input.defaultChecked = input.checked;
+              }
+            });
+          });
+          
+          // Strategy 3: Try to disable Moodle's form change checker
+          if (window.M && window.M.core_formchangechecker) {
+            try {
+              window.M.core_formchangechecker.reset_form_dirty_state();
+            } catch (e) {}
+          }
+          
+          return { reset: true };
+        },
+      });
+    } catch (e) {
+      // Ignore errors - just proceed with navigation
+      console.log('[MoodleMCP] Force navigate cleanup error:', e);
+    }
   }
   
   await chrome.tabs.update(tab.id, { url });
@@ -599,20 +655,51 @@ async function handleSetEditor(id, params, tab) {
   const result = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: (content, targetEditorId) => {
-      // Find the editor textarea
-      let textarea;
+      // Find the editor textarea - Moodle uses various naming conventions:
+      // - id_message_editor (forum posts)
+      // - id_summary_editor (course summaries)
+      // - id_introeditor (activity intros)
+      // - id_content_editor (book chapters)
+      let textarea = null;
+      
+      // Try multiple ID patterns based on the provided editorId
       if (targetEditorId) {
+        // Try exact ID first
         textarea = document.getElementById(targetEditorId);
-      } else {
-        // Find first plausible editor - include message textareas for forums
+        
+        // Try with _editor suffix (common Moodle pattern)
+        if (!textarea) {
+          textarea = document.getElementById(targetEditorId + '_editor');
+        }
+        
+        // Try removing 'id_' prefix and looking for editor textarea
+        if (!textarea && targetEditorId.startsWith('id_')) {
+          const baseName = targetEditorId.substring(3);
+          textarea = document.getElementById('id_' + baseName + '_editor');
+          if (!textarea) {
+            textarea = document.getElementById('id_' + baseName + 'editor');
+          }
+        }
+      }
+      
+      // Fallback: find first plausible editor textarea
+      if (!textarea) {
         textarea = document.querySelector(
-          'textarea[id*="editor"], textarea[id*="summary"], textarea[name*="summary"], ' +
-          'textarea[id*="message"], textarea[name*="message"], textarea[id*="intro"]'
+          'textarea[id$="_editor"], ' +  // IDs ending with _editor
+          'textarea[id*="message"], ' +   // Message-related
+          'textarea[id*="summary"], ' +   // Summary fields
+          'textarea[id*="content"], ' +   // Content fields
+          'textarea[id*="intro"]'         // Introduction fields
         );
       }
       
       if (!textarea) {
-        return { success: false, error: 'No editor textarea found' };
+        // Debug: list all textareas found
+        const allTextareas = Array.from(document.querySelectorAll('textarea')).map(ta => ta.id);
+        return { 
+          success: false, 
+          error: `No editor textarea found. Looking for: ${targetEditorId}. Available textareas: ${allTextareas.join(', ')}` 
+        };
       }
       
       // Set the textarea value
@@ -621,10 +708,11 @@ async function handleSetEditor(id, params, tab) {
       textarea.dispatchEvent(new Event('change', { bubbles: true }));
       
       // Try to update the contenteditable div if using Atto/TinyMCE
-      const editorId = textarea.id;
-      // Look for Atto editor's editable div
+      const textareaId = textarea.id;
+      // Look for Atto editor's editable div - it's usually next to or wrapping the textarea
+      // Common patterns: #id_message_editoreditable or .editor_atto_content
       const editableDiv = document.querySelector(
-        `#${editorId}editable, ` +
+        `#${textareaId}editable, ` +
         `[data-region="text"] [contenteditable="true"], ` +
         `.editor_atto_content[contenteditable="true"]`
       );
@@ -1659,6 +1747,57 @@ async function handleExtractFeedbackNonrespondents(id, params, tab) {
   };
   console.log('[MoodleMCP] handleExtractFeedbackNonrespondents returning:', JSON.stringify(response, null, 2));
   return response;
+}
+
+// Extract the first post ID from a forum discussion page (needed for delete)
+async function handleExtractFirstPostId(id, params, tab) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      // Method 1: Look for delete link which contains the post ID
+      const deleteLink = document.querySelector('a[href*="post.php?delete="]');
+      if (deleteLink) {
+        const match = deleteLink.href.match(/delete=(\d+)/);
+        if (match) {
+          return { postId: parseInt(match[1]), method: 'deleteLink' };
+        }
+      }
+      
+      // Method 2: Look for post ID in data attributes
+      const firstPost = document.querySelector('.forumpost[data-post-id], .forum-post[data-postid], article[data-postid]');
+      if (firstPost) {
+        const postId = firstPost.dataset.postId || firstPost.dataset.postid;
+        if (postId) {
+          return { postId: parseInt(postId), method: 'dataAttribute' };
+        }
+      }
+      
+      // Method 3: Look for reply link which often contains parent post ID
+      const replyLink = document.querySelector('a[href*="reply="]');
+      if (replyLink) {
+        const match = replyLink.href.match(/reply=(\d+)/);
+        if (match) {
+          return { postId: parseInt(match[1]), method: 'replyLink' };
+        }
+      }
+      
+      // Method 4: Look in post container ID (e.g., id="p1913705")
+      const postContainer = document.querySelector('[id^="p"][id*="post"], .forumpost[id], article[id^="p"]');
+      if (postContainer && postContainer.id) {
+        const match = postContainer.id.match(/p?(\d+)/);
+        if (match) {
+          return { postId: parseInt(match[1]), method: 'containerId' };
+        }
+      }
+      
+      return null;
+    },
+  });
+  
+  if (result[0]?.result?.postId) {
+    return { id, success: true, ...result[0].result };
+  }
+  return { id, success: false, error: 'Could not find post ID on this page' };
 }
 
 // Send a message to a Moodle user via the messaging interface

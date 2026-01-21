@@ -126,6 +126,12 @@ async function handleMcpRequest(
           serverInfo: {
             name: 'moodle-mcp',
             version: '1.0.0',
+            description: 'Moodle LMS interaction via browser extension bridge',
+            limitations: [
+              'CSP Restriction: Moodle blocks arbitrary JavaScript execution. Use only the provided tools.',
+              'Browser Required: A browser with the Moodle MCP extension must be connected.',
+              'Single User: Each API key connects to one browser session at a time.',
+            ],
           },
         },
       };
@@ -205,7 +211,10 @@ async function handleToolCall(
         break;
 
       case 'browse_moodle':
-        result = await sendBrowserCommand(userId, 'navigate', { url: args.url });
+        result = await sendBrowserCommand(userId, 'navigate', { 
+          url: args.url,
+          force: args.force || false,
+        });
         break;
 
       case 'click_element':
@@ -230,8 +239,10 @@ async function handleToolCall(
         break;
 
       case 'set_editor_content':
-        result = await sendBrowserCommand(userId, 'evaluate', {
-          script: createEditorScript(args.html_content, args.editor_id),
+        // Use the CSP-safe setEditor action instead of evaluate
+        result = await sendBrowserCommand(userId, 'setEditor', {
+          htmlContent: args.html_content,
+          editorId: args.editor_id,
         });
         
         if (args.auto_save && result?.success) {
@@ -249,11 +260,6 @@ async function handleToolCall(
         });
         break;
 
-      case 'evaluate_script':
-        result = await sendBrowserCommand(userId, 'evaluate', {
-          script: args.script,
-        });
-        break;
 
       // -----------------------------
       // Moodle macros (v0) - built from primitives
@@ -261,9 +267,9 @@ async function handleToolCall(
       case 'open_course':
         await sendBrowserCommand(userId, 'navigate', { url: `/course/view.php?id=${args.course_id}` });
         await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 10000 });
-        result = await sendBrowserCommand(userId, 'evaluate', {
-          script: `(() => ({ url: location.href, title: document.title }))()`,
-        });
+        // Use extract instead of evaluate to avoid CSP issues
+        result = await sendBrowserCommand(userId, 'extract', {});
+        result = { url: result?.url, title: result?.title, courseId: args.course_id };
         break;
 
       case 'open_participants':
@@ -772,9 +778,10 @@ async function handleToolCall(
         break;
 
       case 'create_forum_post':
-        // Navigate to new discussion page
+        // Navigate to new discussion page (use force to dismiss any unsaved changes dialogs)
         await sendBrowserCommand(userId, 'navigate', {
           url: `/mod/forum/post.php?forum=${args.forum_id}`,
+          force: true,
         });
         await sendBrowserCommand(userId, 'wait', { selector: '#id_subject', timeout: 10000 });
         
@@ -798,6 +805,93 @@ async function handleToolCall(
         await sendBrowserCommand(userId, 'wait', { selector: '.forumpost, .discussion-list', timeout: 10000 });
         
         result = { success: true, forumId: args.forum_id, subject: args.subject };
+        break;
+
+      case 'find_forum_discussion':
+        // Navigate to forum page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/forum/view.php?id=${args.forum_cmid}`,
+          force: true,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'a[href*="discuss.php"]', timeout: 10000 });
+        
+        // Extract all discussions
+        const findDiscussionsResult = await sendBrowserCommand(userId, 'extract_forum_discussions', {});
+        let foundDiscussions = findDiscussionsResult?.discussions || [];
+        
+        // Filter by subject pattern
+        if (args.subject_pattern) {
+          const subjectPattern = args.subject_pattern.toLowerCase();
+          foundDiscussions = foundDiscussions.filter((d: { title: string }) => 
+            d.title?.toLowerCase().includes(subjectPattern)
+          );
+        }
+        
+        // Filter by author
+        if (args.author) {
+          const authorPattern = args.author.toLowerCase();
+          foundDiscussions = foundDiscussions.filter((d: { author: string }) => 
+            d.author?.toLowerCase().includes(authorPattern)
+          );
+        }
+        
+        // Apply limit
+        const findLimit = args.limit || 10;
+        foundDiscussions = foundDiscussions.slice(0, findLimit);
+        
+        result = {
+          forumCmid: args.forum_cmid,
+          searchCriteria: {
+            subjectPattern: args.subject_pattern || null,
+            author: args.author || null,
+          },
+          matches: foundDiscussions,
+          matchCount: foundDiscussions.length,
+        };
+        break;
+
+      case 'delete_forum_discussion':
+        if (!args.confirm) {
+          result = { error: 'Deletion requires confirm=true to prevent accidental data loss.' };
+          break;
+        }
+        
+        // Navigate to the discussion page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/forum/discuss.php?d=${args.discussion_id}`,
+          force: true,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.forumpost, .forum-post', timeout: 10000 });
+        
+        // Extract the first post's ID (needed for delete URL - different from discussion ID)
+        const postIdResult = await sendBrowserCommand(userId, 'extract_first_post_id', {});
+        if (!postIdResult?.postId) {
+          result = { error: 'Could not find post ID. Make sure this is a valid discussion page.' };
+          break;
+        }
+        
+        // Navigate directly to delete confirmation page using the post ID
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/forum/post.php?delete=${postIdResult.postId}`,
+        });
+        
+        // Wait for the confirmation modal to appear
+        await sendBrowserCommand(userId, 'wait', { selector: '#notice, .modal.show, [role="alertdialog"]', timeout: 10000 });
+        
+        // Click the "Continue" button in the modal
+        // Modal has two forms: Cancel (method=get, btn-secondary) and Continue (method=post, btn-primary)
+        await sendBrowserCommand(userId, 'click', {
+          selector: '#notice form[method="post"] button.btn-primary, #modal-footer form[method="post"] button.btn-primary',
+        });
+        
+        // Wait briefly for redirect (don't fail if selector doesn't match - deletion already succeeded)
+        try {
+          await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 3000 });
+        } catch {
+          // Ignore timeout - deletion was successful
+        }
+        
+        result = { success: true, discussionId: args.discussion_id, postId: postIdResult.postId, deleted: true };
         break;
 
       case 'analyze_forum':

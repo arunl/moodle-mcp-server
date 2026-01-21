@@ -1,11 +1,43 @@
 // MCP Tool definitions for Moodle interactions
+//
+// IMPORTANT: Content Security Policy (CSP) Limitations
+// =====================================================
+// Moodle pages have strict CSP that blocks eval() and new Function().
+// This means:
+// - NO arbitrary JavaScript execution on Moodle pages
+// - NO evaluate_script or similar dynamic code execution
+// - All extraction/manipulation must use dedicated handlers in the browser extension
+//
+// If you need new functionality:
+// 1. Add a dedicated handler in browser-extension/background.js
+// 2. Add corresponding action type in connection-manager.ts BrowserCommand interface
+// 3. Add the tool definition here and handler in routes/mcp.ts
+//
+// Available extraction handlers (CSP-safe):
+// - extract: Basic page content (title, headings, links, text)
+// - extract_participants: Parse participants table
+// - extract_forum_discussions: Parse forum discussion list
+// - extract_discussion_replies: Parse replies in a discussion
+// - extract_feedback_responses: Parse feedback submissions
+// - extract_activities: Find activities in a course
+// - extract_assignments: List assignments
+// - extract_course_sections: Get section IDs and names
+// - setEditor: Set rich text editor content
+// - set_moodle_date: Set date fields on forms
+//
 export const moodleTools = [
   // -----------------------------
   // Core / Bridge primitives
   // -----------------------------
   {
     name: 'get_browser_status',
-    description: 'Check if the browser extension is connected and ready to interact with Moodle.',
+    description: `Check if the browser extension is connected and ready to interact with Moodle.
+
+IMPORTANT - Content Security Policy (CSP) Limitations:
+Moodle pages have strict CSP that blocks arbitrary JavaScript execution.
+- Do NOT try to execute custom JavaScript code on Moodle pages
+- Use ONLY the dedicated tools provided (extract_page_content, find_activity, analyze_forum, etc.)
+- If you need new extraction logic, it must be added to the browser extension first`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -26,6 +58,11 @@ Examples:
         url: {
           type: 'string',
           description: 'The URL to navigate to. Can be a full URL or a path relative to the Moodle base URL.',
+        },
+        force: {
+          type: 'boolean',
+          description: 'If true, dismiss any "unsaved changes" dialogs before navigating. Use this when you need to navigate away from a partially edited form.',
+          default: false,
         },
       },
       required: ['url'],
@@ -155,23 +192,6 @@ Use this for Book chapters, Forum posts, Assignment descriptions, Labels, etc.`,
         },
       },
       required: ['selector'],
-    },
-  },
-  {
-    name: 'evaluate_script',
-    description: `Execute custom JavaScript in the browser context.
-    
-Use this for complex operations not covered by other tools. The script should return a value.
-Example: "return document.querySelectorAll('.activity').length"`,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        script: {
-          type: 'string',
-          description: 'JavaScript code to execute. Should use "return" to return a value.',
-        },
-      },
-      required: ['script'],
     },
   },
 
@@ -669,6 +689,64 @@ This tool navigates to the forum's new discussion page, fills in the subject and
         },
       },
       required: ['forum_id', 'subject', 'message'],
+    },
+  },
+  {
+    name: 'find_forum_discussion',
+    description: `Search for a discussion in a forum by subject or author.
+
+Returns matching discussions with their IDs, which can then be used with delete_forum_discussion.
+
+Examples:
+- find_forum_discussion(forum_cmid=2618458, subject_pattern="TEST")
+- find_forum_discussion(forum_cmid=2618458, author="Arun Lakhotia")
+- find_forum_discussion(forum_cmid=2618458, subject_pattern="Announcement", limit=5)`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        forum_cmid: {
+          type: 'number',
+          description: 'The forum cmid (from mod/forum/view.php?id=...).',
+        },
+        subject_pattern: {
+          type: 'string',
+          description: 'Text to search for in discussion subjects (case-insensitive).',
+        },
+        author: {
+          type: 'string',
+          description: 'Filter by author name (case-insensitive).',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return. Defaults to 10.',
+          default: 10,
+        },
+      },
+      required: ['forum_cmid'],
+    },
+  },
+  {
+    name: 'delete_forum_discussion',
+    description: `Delete a forum discussion/post.
+    
+WARNING: This will permanently delete the discussion and all its replies.
+
+Use find_forum_discussion first to get the discussion_id from a subject search.
+Requires confirm=true to execute.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        discussion_id: {
+          type: 'number',
+          description: 'The discussion ID (d parameter from mod/forum/discuss.php?d=...). Use find_forum_discussion to find this from a subject.',
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'Must be true to confirm deletion.',
+          default: false,
+        },
+      },
+      required: ['discussion_id', 'confirm'],
     },
   },
   {

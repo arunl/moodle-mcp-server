@@ -172,10 +172,11 @@ export class ConnectionManager {
 }
 
 // Browser command interface
+// NOTE: 'evaluate' is intentionally NOT included - Moodle's CSP blocks eval()
 export interface BrowserCommand {
   id: string;
   action: 
-    | 'navigate' | 'click' | 'type' | 'extract' | 'screenshot' | 'evaluate' | 'wait'
+    | 'navigate' | 'click' | 'type' | 'extract' | 'screenshot' | 'wait'
     // Moodle-specific extraction actions (CSP-safe, no eval)
     | 'extract_participants' | 'extract_editing_status' | 'extract_addable_sections' 
     | 'extract_forum_discussions' | 'extract_course_sections'
@@ -191,7 +192,9 @@ export interface BrowserCommand {
     // Session/auth actions
     | 'extract_sesskey' | 'extract_course_id'
     // Messaging actions
-    | 'send_moodle_message';
+    | 'send_moodle_message'
+    // Forum post actions
+    | 'extract_first_post_id';
   params: Record<string, unknown>;
 }
 

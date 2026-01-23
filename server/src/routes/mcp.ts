@@ -6,10 +6,25 @@ import { hashApiKey } from '../auth/jwt.js';
 import { connectionManager, BrowserCommand } from '../bridge/connection-manager.js';
 import { moodleTools, generateCommandId } from '../mcp/tools.js';
 
-// Note: Moodle-specific extraction logic has been moved to the browser extension
-// (background.js) to avoid CSP issues with eval(). The server now uses dedicated
-// action types: extract_participants, extract_editing_status, extract_addable_sections,
-// extract_forum_discussions
+/**
+ * IMPORTANT: Moodle Content Security Policy (CSP) Limitations
+ * 
+ * Moodle blocks 'unsafe-eval' in its CSP, which means:
+ * - evaluate_script and set_editor_content tools will FAIL on Moodle pages
+ * - JavaScript injection via eval() is not possible
+ * 
+ * Workarounds implemented:
+ * 1. Extraction logic moved to browser extension (background.js) using dedicated
+ *    action types: extract_participants, extract_editing_status, extract_addable_sections,
+ *    extract_forum_discussions
+ * 2. For form interactions, use type_text with DOM selectors:
+ *    - .editor_atto_content for rich text editors
+ *    - #id_subject, #id_name etc. for form fields
+ *    - #id_submitbutton for form submission
+ * 3. Blur the editor before submitting (click another element) to sync content
+ * 
+ * See docs/BEST-PRACTICES.md for detailed guidance on working with Moodle's CSP.
+ */
 
 const mcp = new Hono();
 

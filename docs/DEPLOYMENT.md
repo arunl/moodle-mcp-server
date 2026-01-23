@@ -234,3 +234,81 @@ fly scale count 2
 # Upgrade machine size (costs money)
 fly scale vm shared-cpu-1x --memory 512
 ```
+
+---
+
+## Removing Secrets from Git History
+
+If you accidentally commit secrets (API keys, OAuth credentials, etc.) to git, GitHub's push protection will block the push. Here's how to remove them from history:
+
+### When GitHub Blocks Your Push
+
+You'll see an error like:
+```
+remote: error: GH013: Repository rule violations found
+remote: - GITHUB PUSH PROTECTION
+remote:   Push cannot contain secrets
+```
+
+### Option 1: Quick Fix (If You'll Rotate Credentials)
+
+1. Click the GitHub-provided links to allow the push temporarily
+2. Push your code
+3. **Immediately rotate the credentials** in their source (Google Cloud Console, etc.)
+4. Update Fly.io secrets with new credentials:
+   ```bash
+   fly secrets set GOOGLE_CLIENT_ID="new-id" GOOGLE_CLIENT_SECRET="new-secret"
+   ```
+
+### Option 2: Remove from Git History (Recommended)
+
+This completely removes the file from all commits:
+
+```bash
+# 1. Stash any uncommitted changes
+git stash --include-untracked
+
+# 2. Remove the file from ALL commits in history
+#    (set FILTER_BRANCH_SQUELCH_WARNING=1 to suppress warning)
+# On Windows PowerShell:
+$env:FILTER_BRANCH_SQUELCH_WARNING=1
+git filter-branch --force --index-filter `
+  "git rm --cached --ignore-unmatch <filename>" `
+  --prune-empty --tag-name-filter cat -- --all
+
+# On macOS/Linux:
+FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch <filename>" \
+  --prune-empty --tag-name-filter cat -- --all
+
+# 3. Force push to overwrite remote history
+git push origin <branch> --force
+
+# 4. Restore your stashed changes
+git stash pop
+
+# 5. Clean up the backup refs created by filter-branch
+git for-each-ref --format="%(refname)" refs/original/ | xargs -n 1 git update-ref -d
+```
+
+### Preventing Future Accidents
+
+1. **Add secrets to `.gitignore` BEFORE creating them:**
+   ```gitignore
+   # Secrets
+   .env
+   .env.*
+   *.pem
+   *-credentials.json
+   start-dev-server.sh
+   ```
+
+2. **Use environment variables** instead of hardcoding secrets
+
+3. **Use `.env.example`** with placeholder values for documentation
+
+### Important Notes
+
+- **`.gitignore` only prevents future tracking** - it doesn't remove already-committed files
+- **Always rotate credentials** after they've been in git history (even if removed)
+- **Force push rewrites history** - coordinate with team members if sharing the branch

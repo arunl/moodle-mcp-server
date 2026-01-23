@@ -13,6 +13,7 @@ auth.get('/google', async (c) => {
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
   const isExtension = c.req.query('extension') === 'true';
+  const isOAuthProvider = c.req.query('oauth_provider') === 'true';
   
   const url = google.createAuthorizationURL(state, codeVerifier, ['openid', 'email', 'profile']);
   
@@ -33,11 +34,23 @@ auth.get('/google', async (c) => {
     sameSite: 'Lax',
   });
   
-  // Clear any stale extension cookie first, then set if needed
+  // Clear any stale flow cookies first
   deleteCookie(c, 'oauth_extension', { path: '/' });
+  deleteCookie(c, 'oauth_provider_flow', { path: '/' });
   
   if (isExtension) {
     setCookie(c, 'oauth_extension', 'true', {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 10,
+      sameSite: 'Lax',
+    });
+  }
+  
+  if (isOAuthProvider) {
+    // OAuth 2.1 provider flow (ChatGPT integration)
+    setCookie(c, 'oauth_provider_flow', 'true', {
       path: '/',
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -171,6 +184,16 @@ auth.get('/google/callback', async (c) => {
 </body>
 </html>`;
       return c.html(html);
+    }
+    
+    // Check if this is an OAuth 2.1 provider flow (ChatGPT integration)
+    const isOAuthProvider = getCookie(c, 'oauth_provider_flow') === 'true';
+    deleteCookie(c, 'oauth_provider_flow');
+    
+    if (isOAuthProvider) {
+      // Redirect back to OAuth authorize endpoint to show consent screen
+      // The oauth_provider_params cookie contains the original OAuth request
+      return c.redirect('/oauth/authorize');
     }
 
     // Redirect to dashboard (cookies already set above)

@@ -940,8 +940,8 @@ async function handleToolCall(
         }
         
         // Extract sesskey from the page (required for delete confirmation)
-        const deleteSesskeyResult = await sendBrowserCommand(userId, 'extract_sesskey', {});
-        if (!deleteSesskeyResult?.sesskey) {
+        const forumSesskeyResult = await sendBrowserCommand(userId, 'extract_sesskey', {});
+        if (!forumSesskeyResult?.sesskey) {
           result = { error: 'Could not extract sesskey. User may not have permission to delete.' };
           break;
         }
@@ -950,7 +950,7 @@ async function handleToolCall(
         // This bypasses the confirmation modal click which can be unreliable
         // See docs/BEST-PRACTICES.md for rationale
         await sendBrowserCommand(userId, 'navigate', {
-          url: `/mod/forum/post.php?delete=${postIdResult.postId}&confirm=1&sesskey=${deleteSesskeyResult.sesskey}`,
+          url: `/mod/forum/post.php?delete=${postIdResult.postId}&confirm=1&sesskey=${forumSesskeyResult.sesskey}`,
         });
         
         // Wait for redirect to forum view (indicates successful deletion)

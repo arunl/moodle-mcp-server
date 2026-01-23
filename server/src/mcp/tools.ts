@@ -164,7 +164,12 @@ ACCESSIBILITY REQUIREMENTS - All HTML content MUST follow these guidelines:
    For external links, indicate they open in new tab: "Guide (opens in new tab)"
 4. IMAGES: Always include meaningful alt text. Use alt="" for decorative images.
 5. LISTS: Use <ul>/<ol> for lists, not manual bullets or numbers.
-6. COLOR: Don't rely solely on color to convey meaning. Use text labels too.
+6. COLOR & CONTRAST: Don't rely solely on color to convey meaning. Text must have sufficient 
+   contrast against background (4.5:1 ratio minimum). When using colored backgrounds:
+   - Use solid colors, not gradients (gradients complicate contrast calculation)
+   - Explicitly set text color on ALL elements including <strong>, <em>, <span>
+   - White text (#ffffff) on dark backgrounds, dark text (#000000 or #2c3e50) on light backgrounds
+   - Test: if background is light, text must be dark; if background is dark, text must be white
 7. STRUCTURE: Use semantic HTML (<strong> not <b>, <em> not <i>).`,
     inputSchema: {
       type: 'object',
@@ -698,7 +703,10 @@ ACCESSIBILITY REQUIREMENTS for message content:
 2. HEADINGS: Use h3/h4 (h2 is post title), maintain hierarchy
 3. LINKS: Descriptive text, indicate external links "(opens in new tab)"
 4. LISTS: Use <ul>/<ol>, not manual bullets
-5. Don't rely on color alone to convey meaning
+5. COLOR & CONTRAST: Don't rely on color alone to convey meaning. For colored backgrounds:
+   - Use solid colors (not gradients) for predictable contrast
+   - Set explicit text color on ALL elements including <strong>, <em>
+   - Minimum 4.5:1 contrast ratio (white text on dark bg, dark text on light bg)
 
 Example with accessible table:
 <table>

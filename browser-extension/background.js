@@ -1,11 +1,9 @@
 // Background service worker for Moodle MCP Bridge (Hosted Version)
 // VERSION 2.3.0 - Using ISOLATED world to bypass page CSP for evaluate
-console.log('[MoodleMCP v2.3.0] Background script loaded - connecting to localhost:8080');
+import { SERVER_URL, WS_URL } from './config.js';
 
-// Server configuration - change for production
-// For local development, use localhost:8080
-const SERVER_URL = 'http://localhost:8080';
-const WS_URL = 'ws://localhost:8080/ws';
+console.log('[MoodleMCP v2.3.0] Background script loaded');
+console.log('[MoodleMCP] Server URL:', SERVER_URL);
 console.log('[MoodleMCP] WebSocket URL:', WS_URL);
 
 let ws = null;
@@ -85,11 +83,15 @@ async function connectWebSocket() {
       console.log('[WebSocket] Connected, authenticating...');
       reconnectAttempts = 0;
       
-      // Send authentication
-      ws.send(JSON.stringify({
-        type: 'auth',
-        token: accessToken,
-      }));
+      // Send authentication (with readyState check for safety)
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'auth',
+          token: accessToken,
+        }));
+      } else {
+        console.warn('[WebSocket] Unexpected state in onopen:', ws.readyState);
+      }
     };
 
     ws.onmessage = async (event) => {
@@ -106,9 +108,9 @@ async function connectWebSocket() {
           console.error('[WebSocket] Auth error:', message.error);
           // Try to refresh token
           const newToken = await refreshAccessToken();
-          if (newToken) {
+          if (newToken && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'auth', token: newToken }));
-          } else {
+          } else if (!newToken) {
             chrome.storage.local.set({ wsConnected: false });
           }
           return;
@@ -121,7 +123,11 @@ async function connectWebSocket() {
         // Handle browser commands
         if (message.id && message.action) {
           const response = await handleCommand(message);
-          ws.send(JSON.stringify(response));
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(response));
+          } else {
+            console.warn('[WebSocket] Cannot send response - connection not open');
+          }
         }
       } catch (error) {
         console.error('[WebSocket] Message error:', error);
@@ -2099,17 +2105,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         // Also check if window was closed
-        try {
-          chrome.windows.get(popupWindow.id, (w) => {
-            if (chrome.runtime.lastError || !w) {
-              // Window closed, do one final auth check
-              clearInterval(checkAuth);
-              tryAuth();
-            }
-          });
-        } catch (e) {
-          clearInterval(checkAuth);
-        }
+        chrome.windows.get(popupWindow.id, (w) => {
+          // Check for lastError first to suppress "No window" console error
+          const err = chrome.runtime.lastError;
+          if (err || !w) {
+            // Window closed, do one final auth check
+            clearInterval(checkAuth);
+            tryAuth();
+          }
+        });
       }, 500); // Check every 500ms
       
       // Stop polling after 5 minutes

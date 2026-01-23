@@ -1,7 +1,5 @@
 // Popup script for Moodle MCP Bridge
-
-// For local development, use localhost:8080
-const SERVER_URL = 'http://localhost:8080';
+import { SERVER_URL } from './config.js';
 
 // DOM elements
 const loadingEl = document.getElementById('loading');
@@ -19,6 +17,12 @@ const userName = document.getElementById('user-name');
 const userEmail = document.getElementById('user-email');
 const serverStatus = document.getElementById('server-status');
 const wsStatus = document.getElementById('ws-status');
+
+// Hide Dev Login button unless connecting to localhost
+const isLocalDev = SERVER_URL.includes('localhost') || SERVER_URL.includes('127.0.0.1');
+if (!isLocalDev) {
+  devLoginBtn.style.display = 'none';
+}
 
 // Load current status
 async function loadStatus() {
@@ -106,5 +110,5 @@ dashboardBtn.addEventListener('click', () => {
 // Initialize
 loadStatus();
 
-// Refresh status periodically
-setInterval(loadStatus, 3000);
+// Refresh status periodically (5 seconds - popup is only open briefly)
+setInterval(loadStatus, 5000);

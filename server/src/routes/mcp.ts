@@ -59,6 +59,13 @@ mcp.post('/', async (c) => {
   // Handle JSON-RPC request
   const response = await handleMcpRequest(request, auth.userId);
   
+  // Notifications (no id) don't require a response in JSON-RPC spec,
+  // but HTTP requires a response body. Return minimal valid JSON-RPC.
+  if (response === null) {
+    // Use null id for notifications (valid in JSON-RPC 2.0)
+    return c.json({ jsonrpc: '2.0', id: null, result: 'ok' });
+  }
+  
   return c.json(response);
 });
 
@@ -140,6 +147,10 @@ async function handleMcpRequest(
               'Images: Always include meaningful alt text.',
               'Lists: Use semantic <ul>/<ol>, not manual bullets.',
               'Color: Never rely solely on color to convey meaning.',
+              'Contrast: Text must have 4.5:1 minimum contrast ratio against background.',
+              'Contrast: Use solid background colors, not gradients (gradients complicate contrast calculation).',
+              'Contrast: Explicitly set color on ALL text elements including <strong>, <em>, <span> inside colored boxes.',
+              'Contrast: White text (#ffffff) on dark backgrounds; dark text (#000000 or #2c3e50) on light backgrounds.',
             ],
           },
         },

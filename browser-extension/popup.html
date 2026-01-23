@@ -185,12 +185,31 @@
       padding: 2rem;
       color: var(--text-secondary);
     }
+    
+    .version {
+      font-size: 0.65rem;
+      color: var(--text-secondary);
+      background: var(--bg-secondary);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-left: auto;
+    }
+    
+    .footer {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <span class="logo">🎓</span>
     <h1>Moodle MCP</h1>
+    <span class="version" id="version">v2.3.0</span>
   </div>
   
   <div id="loading">Loading...</div>
@@ -267,6 +286,11 @@
     </div>
   </div>
   
-  <script src="popup.js"></script>
+  <div class="footer">
+    © Dr. Arun Lakhotia<br>
+    University of Louisiana at Lafayette
+  </div>
+  
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

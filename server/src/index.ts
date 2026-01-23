@@ -1041,9 +1041,9 @@ const dashboardPageHtml = `
     
     function showApiKeyModal(key) {
       const modal = document.createElement('div');
-      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:1000;';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:1000;cursor:pointer;';
       modal.innerHTML = \`
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:500px;width:90%;">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:500px;width:90%;cursor:default;" onclick="event.stopPropagation();">
           <h3 style="color:var(--success);margin-bottom:1rem;">✓ API Key Created!</h3>
           <p style="color:var(--text-secondary);margin-bottom:1rem;font-size:0.9rem;">Save this key now - it will not be shown again!</p>
           <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
@@ -1051,10 +1051,12 @@ const dashboardPageHtml = `
           </div>
           <div style="display:flex;gap:1rem;">
             <button onclick="navigator.clipboard.writeText('\${key}');this.textContent='Copied!';this.style.background='var(--success)';" class="btn btn-primary" style="flex:1;">📋 Copy Key</button>
-            <button onclick="this.closest('div').parentElement.remove();" class="btn btn-secondary" style="flex:1;">Close</button>
+            <button onclick="this.closest('[style*=\\"position:fixed\\"]').remove();" class="btn btn-secondary" style="flex:1;">Close</button>
           </div>
         </div>
       \`;
+      // Click outside (on overlay) to close
+      modal.onclick = () => modal.remove();
       document.body.appendChild(modal);
     }
     
@@ -1151,8 +1153,8 @@ const dashboardPageHtml = `
     
     loadDashboard();
     checkBrowserStatus();
-    // Poll browser status every 3 seconds
-    setInterval(checkBrowserStatus, 3000);
+    // Poll browser status every 10 seconds (balance between responsiveness and server load)
+    setInterval(checkBrowserStatus, 10000);
   </script>
 </body>
 </html>

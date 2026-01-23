@@ -1,4 +1,4 @@
-# Dependencies
+﻿# Dependencies
 node_modules/
 
 # Build output
@@ -33,3 +33,9 @@ temp/
 
 # Course-specific materials (instructor's personal content)
 course-materials/
+
+# Local dev scripts with secrets
+start-dev-server.sh
+
+# Course data files (personal/student data)
+453/

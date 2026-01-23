@@ -1,161 +1,115 @@
-# Moodle MCP Server
+# Moodle MCP
 
-An MCP (Model Context Protocol) server that provides AI assistants with access to Moodle LMS. Interact with your courses, assignments, grades, calendar, and more through natural language.
+A bridge that lets AI assistants interact with Moodle LMS through your browser. Works with any Moodle instance—including those using SSO/LDAP—because it uses your existing browser session.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)
 
-## ⚠️ Important: University Moodle Compatibility
+## Architecture
 
-Many universities **disable Moodle's Web Services API**, which this MCP server requires. If your university uses SSO (Single Sign-On) and you cannot find security tokens in your Moodle preferences, the API is likely disabled.
-
-### Alternative: Browser-Based Access (Recommended for Universities)
-
-If your university has web services disabled, you can still access Moodle through **Cursor's browser extension**:
-
-1. **Install the Cursor Browser Extension** in Chrome/Edge
-2. **Log into Moodle** in your browser
-3. **Ask Cursor naturally**: *"Get my courses from Moodle"*
-
-Cursor will navigate to Moodle pages directly and extract the information for you.
-
-**Requirements for browser-based access:**
-- ✅ Browser must be open and logged into Moodle
-- ✅ Cursor browser extension installed and connected
-- ✅ Works with SSO/university authentication
-- ❌ Does NOT require API tokens or web services
-
-**Example prompts:**
-- *"Show me my Moodle courses"*
-- *"What assignments are due this week?"*
-- *"Get the contents of my Software Methodology course"*
-
----
-
-## Features (API Mode)
-
-If your Moodle instance has web services enabled, this MCP server provides:
-
-- 📚 **Courses** - List enrolled courses, view course contents and materials
-- 📝 **Assignments** - Get assignments, due dates, submission status, and feedback
-- 📊 **Grades** - View grades, percentages, and instructor feedback
-- 📅 **Calendar** - Access upcoming deadlines and events
-- 🔔 **Notifications** - Check recent notifications and messages
-- 💬 **Forums** - Browse forum discussions
-- 🔍 **Search** - Search for courses across the platform
-
-## Requirements (API Mode)
-
-- Node.js 18.0.0 or higher
-- A Moodle account (student, teacher, or any role)
-- **Moodle Web Services enabled** by your administrator
-- A Moodle security token (see [Getting Your Token](#getting-your-token))
-
-## Installation
-
-### From npm (when published)
-
-```bash
-npm install -g moodle-mcp-server
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              YOUR MACHINE                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌────────────────┐              ┌────────────────────────────────────┐ │
+│  │  AI Assistant  │              │     Browser (Chrome/Edge)          │ │
+│  │  (Claude,      │              │  ┌──────────────────────────────┐  │ │
+│  │   Cursor, etc) │              │  │ Your Moodle (logged in)      │  │ │
+│  └───────┬────────┘              │  └──────────────────────────────┘  │ │
+│          │ MCP Protocol          │  ┌──────────────────────────────┐  │ │
+│          │                       │  │ Browser Extension            │  │ │
+│          │                       │  │ (executes commands securely) │  │ │
+│          │                       │  └─────────────┬────────────────┘  │ │
+└──────────┼───────────────────────┼────────────────┼───────────────────┘
+           │                       │                │ WebSocket
+           ▼                       │                ▼
+┌──────────────────────────────────┴────────────────────────────────────┐
+│                    Moodle MCP Server (Hosted)                         │
+│              Routes commands · Never sees your credentials            │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
-### From source
+**Key principle:** Your Moodle credentials never leave your browser. The server only routes commands between your AI assistant and the browser extension.
+
+## Components
+
+| Component | Description |
+|-----------|-------------|
+| **Server** (`server/`) | Hono-based Node.js server with Google OAuth, JWT auth, WebSocket bridge |
+| **Browser Extension** (`browser-extension/`) | Chrome extension that executes MCP commands in your Moodle session |
+| **MCP Remote** (`mcp-remote/`) | Generic stdio-to-HTTP bridge for MCP clients that only support stdio |
+
+## Quick Start
+
+### For Users (Hosted Service)
+
+1. **Sign up** at the hosted service (get URL from your administrator)
+2. **Get API key** from the dashboard
+3. **Install extension** from the dashboard
+4. **Configure AI client** (see [Setup Guide](docs/SETUP-GUIDE.md))
+
+### For Developers (Local)
 
 ```bash
-git clone https://github.com/yourusername/moodle-mcp-server.git
-cd moodle-mcp-server
+# Clone and install
+git clone https://github.com/arunlakhotia/moodle-mcp.git
+cd moodle-mcp/server
 npm install
-npm run build
+
+# Configure environment
+cp env.example .env
+# Edit .env with your Google OAuth credentials
+
+# Start server
+npm run dev
 ```
 
-## Getting Your Token
+Then:
+1. Load `browser-extension/` in Chrome (`chrome://extensions` → Developer mode → Load unpacked)
+2. Visit `http://localhost:8080/dev` to create test credentials
+3. Configure your AI client (see below)
 
-Most university Moodle instances use SSO (Single Sign-On), so you'll need to get a security token from Moodle's preferences.
+## AI Client Configuration
 
-### Option 1: Security Keys (Recommended for SSO/University Moodle)
+### Cursor IDE (with stdio bridge)
 
-1. Log in to your Moodle site
-2. Click on your profile picture/name in the top right
-3. Select **Preferences** (or **Profile settings**)
-4. Look for **Security keys** (sometimes under "User account")
-5. Find the token for "Moodle mobile web service" and copy it
-
-> **Note:** If you don't see Security keys, your Moodle admin may have disabled this feature. Contact your IT department.
-
-### Option 2: Username/Password (Non-SSO Moodle only)
-
-If your Moodle instance allows direct login (not SSO), you can use your username and password directly. This typically works for self-hosted or standalone Moodle installations.
-
-## Configuration
-
-Create a `.env` file in the project root (or set environment variables):
+Cursor requires stdio-based MCP servers. Use the `mcp-remote` bridge:
 
 ```bash
-# Required: Your Moodle site URL (without trailing slash)
-MOODLE_URL=https://moodle.yourschool.edu
-
-# Authentication Option 1: Token (Recommended)
-MOODLE_TOKEN=your_token_here
-
-# Authentication Option 2: Username/Password (for non-SSO only)
-# MOODLE_USERNAME=your_username
-# MOODLE_PASSWORD=your_password
-
-# Optional: Service name (default: moodle_mobile_app)
-# MOODLE_SERVICE=moodle_mobile_app
+cd mcp-remote && npm install
 ```
 
-## Usage with Claude Desktop
-
-Add this to your Claude Desktop configuration file:
-
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+Add to `.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "moodle": {
-      "command": "node",
-      "args": ["C:/path/to/moodle-mcp-server/dist/index.js"],
+      "command": "npx",
+      "args": ["tsx", "/path/to/moodle-mcp/mcp-remote/src/index.ts"],
       "env": {
-        "MOODLE_URL": "https://moodle.yourschool.edu",
-        "MOODLE_TOKEN": "your_token_here"
+        "MCP_SERVER_URL": "http://localhost:8080",
+        "MCP_API_KEY": "your-api-key"
       }
     }
   }
 }
 ```
 
-Or if installed globally:
+### Claude Desktop (SSE transport)
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "moodle": {
-      "command": "moodle-mcp",
-      "env": {
-        "MOODLE_URL": "https://moodle.yourschool.edu",
-        "MOODLE_TOKEN": "your_token_here"
-      }
-    }
-  }
-}
-```
-
-## Usage with Cursor
-
-Add to your Cursor MCP settings (`.cursor/mcp.json` or global settings):
-
-```json
-{
-  "mcpServers": {
-    "moodle": {
-      "command": "node",
-      "args": ["C:/path/to/moodle-mcp-server/dist/index.js"],
-      "env": {
-        "MOODLE_URL": "https://moodle.yourschool.edu",
-        "MOODLE_TOKEN": "your_token_here"
+      "transport": {
+        "type": "sse",
+        "url": "http://localhost:8080/mcp/sse"
+      },
+      "headers": {
+        "Authorization": "Bearer your-api-key"
       }
     }
   }
@@ -164,180 +118,86 @@ Add to your Cursor MCP settings (`.cursor/mcp.json` or global settings):
 
 ## Available Tools
 
+### Navigation & Content
 | Tool | Description |
 |------|-------------|
-| `get_site_info` | Get Moodle site info and authenticated user details |
-| `get_courses` | List all enrolled courses with progress |
-| `get_course_contents` | Get sections, modules, and files for a course |
-| `get_assignments` | Get assignments with due dates and descriptions |
-| `get_assignment_status` | Check submission status and feedback for an assignment |
-| `get_grades` | Get all grades for a course |
-| `get_upcoming_deadlines` | Get upcoming assignments and deadlines |
-| `get_calendar_events` | Get calendar events within a date range |
-| `get_notifications` | Get recent notifications |
-| `get_forum_discussions` | Browse forum discussions |
-| `get_user_profile` | Get user profile information |
-| `search_courses` | Search for courses by name |
+| `browse_moodle` | Navigate to any Moodle URL |
+| `extract_page_content` | Get content from current page |
+| `click_element` | Click elements on the page |
+| `type_text` | Type into input fields |
+| `set_editor_content` | Set HTML in Moodle rich text editors |
 
-## Example Prompts
+### Courses
+| Tool | Description |
+|------|-------------|
+| `get_courses` | List your enrolled courses |
+| `open_course` | Navigate to a specific course |
+| `get_course_content` | Get course activities and resources |
+| `get_course_sections` | Get section IDs and names |
 
-Once configured, you can ask your AI assistant things like:
+### Participants & Users
+| Tool | Description |
+|------|-------------|
+| `list_participants` | List enrolled users with roles |
+| `get_enrolled_users` | Get enrolled user details |
+| `send_message` | Send direct message to a user |
+| `bulk_send_message` | Send message to multiple users |
 
-- "What courses am I enrolled in?"
-- "What assignments are due this week?"
-- "Show me my grades for [Course Name]"
-- "What's the status of my assignment for [Assignment Name]?"
-- "What are the upcoming deadlines?"
-- "Show me the contents of [Course Name]"
-- "Do I have any new notifications?"
+### Assignments
+| Tool | Description |
+|------|-------------|
+| `list_assignments` | List assignments with due dates |
+| `get_assignment` | Get assignment details |
+| `get_assignment_submissions` | Get submission status |
+| `create_assignment` | Create new assignment |
+| `edit_assignment` | Modify assignment settings |
+| `extend_assignment_deadline` | Grant deadline extension |
+| `bulk_shift_deadlines` | Shift multiple deadlines |
 
-## Deployment
+### Forums
+| Tool | Description |
+|------|-------------|
+| `forum_list_discussions` | List forum discussions |
+| `find_forum_discussion` | Search discussions by subject |
+| `create_forum_post` | Create new discussion |
+| `delete_forum_discussion` | Delete a discussion |
+| `analyze_forum` | Get participation statistics |
 
-### Running as a Service
+### Feedback Activities
+| Tool | Description |
+|------|-------------|
+| `find_activity` | Find any activity by name/type |
+| `analyze_feedback` | Get response statistics |
 
-You can run this MCP server on a remote machine and connect to it. Here's an example using Docker:
+### Course Management
+| Tool | Description |
+|------|-------------|
+| `edit_section` | Rename course sections |
+| `add_section` | Add new sections |
+| `delete_section` | Remove sections |
+| `hide_section` | Show/hide sections |
+| `move_section` | Reorder sections |
+| `enable_editing` | Enable editing mode |
 
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY dist ./dist
-ENV NODE_ENV=production
-CMD ["node", "dist/index.js"]
-```
+## Security
 
-### Environment Variables for Production
+- 🔐 **Credentials stay local** — Your Moodle session never leaves your browser
+- 🔑 **API keys are hashed** — Server stores only hashes
+- 🚫 **No data storage** — Server routes commands only
+- 🔒 **HTTPS/WSS** — All traffic encrypted in production
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MOODLE_URL` | Yes | Your Moodle instance URL |
-| `MOODLE_TOKEN` | Yes* | Security token from Moodle |
-| `MOODLE_USERNAME` | No* | Username (if not using token) |
-| `MOODLE_PASSWORD` | No* | Password (if not using token) |
-| `MOODLE_SERVICE` | No | Web service name (default: `moodle_mobile_app`) |
+## Documentation
 
-*Either `MOODLE_TOKEN` or both `MOODLE_USERNAME` and `MOODLE_PASSWORD` are required.
-
-## Troubleshooting
-
-### "Invalid login" error
-- For SSO/university Moodle: You must use a security token, not username/password
-- Make sure the token hasn't expired
-- Verify the MOODLE_URL is correct (no trailing slash)
-
-### "Access denied" or "No permission" errors
-- Some Moodle functions may be restricted by your institution
-- Contact your IT department to enable the "Moodle mobile web service"
-
-### Token not found in Preferences
-- Security keys must be enabled by your Moodle administrator
-- Check Site Administration → Plugins → Web services → Manage tokens
-- Ask your IT department for help
-
-### Cannot find courses or grades
-- Make sure you're enrolled in the courses
-- Some courses may be hidden or not yet started
-- Verify your Moodle role has the necessary permissions
-
-## API Reference
-
-This server uses Moodle's Web Services REST API. Common functions used:
-
-- `core_webservice_get_site_info` - Site information
-- `core_enrol_get_users_courses` - User's courses
-- `core_course_get_contents` - Course contents
-- `mod_assign_get_assignments` - Assignments
-- `mod_assign_get_submission_status` - Submission status
-- `gradereport_user_get_grade_items` - Grades
-- `core_calendar_get_action_events_by_timesort` - Calendar events
-- `message_popup_get_popup_notifications` - Notifications
-
-For full API documentation, see [Moodle Web Services API](https://docs.moodle.org/dev/Web_service_API_functions).
-
-## Security Notes
-
-- **Never commit your `.env` file** or expose your token publicly
-- Tokens provide access to your Moodle account - treat them like passwords
-- Consider using environment variables in production instead of config files
-- The server only reads data - it cannot modify your courses or submissions
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- [Setup Guide](docs/SETUP-GUIDE.md) — Detailed setup for various AI clients
+- [Deployment Guide](docs/DEPLOYMENT.md) — Self-hosting the server
+- [Architecture](docs/HOSTED-SERVICE-ARCHITECTURE.md) — Technical details
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Browser-Based Access (Detailed)
-
-For universities with web services disabled, here's the complete setup for browser-based Moodle access:
-
-### Setup Steps
-
-1. **Install Cursor Browser Extension**
-   - Open Chrome or Edge
-   - Go to `chrome://extensions` or `edge://extensions`
-   - Enable "Developer mode"
-   - Install the Cursor browser extension (check Cursor documentation)
-
-2. **Log into Moodle**
-   - Navigate to your Moodle site (e.g., `moodle.yourschool.edu`)
-   - Complete SSO/login process
-   - Stay logged in (don't close the browser)
-
-3. **Use Natural Language in Cursor**
-   - Ask: *"Get my courses from Moodle"*
-   - Cursor will open your Moodle in the browser and extract info
-
-### How It Works
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
-│   Cursor    │────▶│ Browser Extension │────▶│   Moodle    │
-│  (AI Chat)  │◀────│   (navigates)     │◀────│  (web page) │
-└─────────────┘     └──────────────────┘     └─────────────┘
-```
-
-- Cursor controls your browser via the extension
-- Navigates to Moodle pages and reads the content
-- No API tokens required - uses your existing browser session
-
-### Limitations
-
-| Aspect | Browser Mode | API Mode (MCP Server) |
-|--------|--------------|----------------------|
-| Requires browser open | ✅ Yes | ❌ No |
-| Works with SSO | ✅ Yes | ⚠️ Limited |
-| Requires API tokens | ❌ No | ✅ Yes |
-| Speed | Slower (page loads) | Faster (direct API) |
-| Works offline | ❌ No | ❌ No |
-
-### Troubleshooting Browser Mode
-
-**"Not connected to Moodle"**
-- Make sure you're logged into Moodle in your browser
-- Check that the browser extension is active
-- Try refreshing the Moodle page
-
-**"Session expired"**
-- Log back into Moodle
-- University sessions typically expire after 2 hours of inactivity
-
-**Browser not responding**
-- Check if browser extension is installed and enabled
-- Restart the browser
-- Reload Cursor window (Ctrl+Shift+P → "Reload Window")
+MIT License — see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
 - [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
 - [Moodle](https://moodle.org/) Learning Management System
-- University of Louisiana at Lafayette for testing
+- University of Louisiana at Lafayette

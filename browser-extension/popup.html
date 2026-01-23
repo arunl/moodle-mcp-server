@@ -1,256 +1,296 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moodle MCP Bridge</title>
   <style>
-    body {
-      width: 400px;
-      min-height: 300px;
-      padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a2e;
-      color: #eee;
-      margin: 0;
+    :root {
+      --bg-primary: #0a0a0f;
+      --bg-secondary: #12121a;
+      --bg-card: #1a1a24;
+      --text-primary: #f0f0f5;
+      --text-secondary: #a0a0b0;
+      --accent: #ff6b35;
+      --success: #10b981;
+      --danger: #ef4444;
+      --border: rgba(255,255,255,0.1);
     }
     
-    h1 {
-      font-size: 16px;
-      margin: 0 0 12px 0;
-      color: #a78bfa;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      width: 320px;
+      padding: 1.5rem;
+    }
+    
+    .header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
     }
     
-    .status {
-      padding: 12px;
+    .header h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    
+    .logo {
+      font-size: 1.5rem;
+    }
+    
+    .status-card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    
+    .status-row:last-child {
+      margin-bottom: 0;
+    }
+    
+    .status-label {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    
+    .status-badge.connected {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--success);
+    }
+    
+    .status-badge.disconnected {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+    }
+    
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      background: var(--bg-secondary);
       border-radius: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 1rem;
     }
     
-    .status.connected {
-      background: #065f46;
-      border: 1px solid #10b981;
+    .user-info img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
     }
     
-    .status.disconnected {
-      background: #7f1d1d;
-      border: 1px solid #ef4444;
+    .user-info .name {
+      font-weight: 500;
     }
     
-    .status-icon {
-      font-size: 20px;
-      margin-right: 8px;
+    .user-info .email {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
     }
     
-    .info {
-      font-size: 12px;
-      color: #a0a0a0;
-      margin: 8px 0;
-    }
-    
-    .info strong {
-      color: #ddd;
-    }
-    
-    button {
+    .btn {
       width: 100%;
-      padding: 10px;
+      padding: 0.75rem;
       border: none;
-      border-radius: 6px;
-      font-size: 14px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 500;
       cursor: pointer;
-      margin-bottom: 8px;
+      transition: all 0.2s;
+      margin-bottom: 0.5rem;
+    }
+    
+    .btn:last-child {
+      margin-bottom: 0;
     }
     
     .btn-primary {
-      background: #7c3aed;
+      background: linear-gradient(135deg, var(--accent), #ff8c5a);
       color: white;
     }
     
     .btn-primary:hover {
-      background: #6d28d9;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
     }
     
     .btn-secondary {
-      background: #374151;
-      color: #ddd;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
     }
     
     .btn-secondary:hover {
-      background: #4b5563;
+      background: var(--bg-card);
     }
     
-    .btn-small {
-      padding: 6px 10px;
-      font-size: 12px;
-      width: auto;
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
     }
     
     .instructions {
-      font-size: 12px;
-      color: #888;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid #333;
-    }
-    
-    .instructions h3 {
-      color: #a78bfa;
-      font-size: 13px;
-      margin: 0 0 8px 0;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
     }
     
     .instructions ol {
-      margin: 0;
-      padding-left: 20px;
+      margin-left: 1.25rem;
     }
     
     .instructions li {
-      margin-bottom: 4px;
+      margin-bottom: 0.25rem;
     }
     
-    .warning {
-      font-size: 11px;
-      color: #fbbf24;
-      margin-top: 8px;
-    }
-    
-    .copied {
-      background: #10b981 !important;
-    }
-    
-    .tabs {
-      display: flex;
-      margin-bottom: 12px;
-      border-bottom: 1px solid #333;
-    }
-    
-    .tab {
-      padding: 8px 16px;
-      cursor: pointer;
-      color: #888;
-      border-bottom: 2px solid transparent;
-      font-size: 13px;
-    }
-    
-    .tab.active {
-      color: #a78bfa;
-      border-bottom-color: #a78bfa;
-    }
-    
-    .tab-content {
+    .hidden {
       display: none;
     }
     
-    .tab-content.active {
-      display: block;
+    #loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-secondary);
     }
     
-    .debug-logs {
-      max-height: 250px;
-      overflow-y: auto;
-      background: #0f0f1a;
-      border-radius: 6px;
-      padding: 8px;
-      font-family: 'Consolas', 'Monaco', monospace;
-      font-size: 10px;
+    .version {
+      font-size: 0.65rem;
+      color: var(--text-secondary);
+      background: var(--bg-secondary);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-left: auto;
     }
     
-    .log-entry {
-      margin-bottom: 6px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #222;
-    }
-    
-    .log-time {
-      color: #666;
-    }
-    
-    .log-msg {
-      color: #4ade80;
-    }
-    
-    .log-data {
-      color: #60a5fa;
-      margin-left: 10px;
-    }
-    
-    .debug-actions {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 8px;
+    .footer {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.7rem;
+      color: var(--text-secondary);
     }
   </style>
 </head>
 <body>
-  <h1>🎓 Moodle MCP Bridge</h1>
-  
-  <div class="tabs">
-    <div class="tab active" data-tab="main">Status</div>
-    <div class="tab" data-tab="debug">Debug Logs</div>
+  <div class="header">
+    <span class="logo">🎓</span>
+    <h1>Moodle MCP</h1>
+    <span class="version" id="version">v2.3.0</span>
   </div>
   
-  <div id="main-tab" class="tab-content active">
-    <div id="status" class="status disconnected">
-      <span class="status-icon">⚠️</span>
-      <span id="status-text">Checking...</span>
+  <div id="loading">Loading...</div>
+  
+  <!-- Logged Out State -->
+  <div id="logged-out" class="hidden">
+    <div class="status-card">
+      <p style="text-align: center; color: var(--text-secondary); padding: 1rem 0;">
+        Sign in to connect your Moodle sessions to AI assistants.
+      </p>
     </div>
     
-    <div id="session-info" class="info" style="display: none;">
-      <div><strong>URL:</strong> <span id="moodle-url"></span></div>
-      <div><strong>Sesskey:</strong> <span id="sesskey"></span></div>
-      <div><strong>Updated:</strong> <span id="timestamp"></span></div>
-    </div>
-    
-    <div id="mcp-status" class="status disconnected" style="margin-top: 12px;">
-      <span class="status-icon">🔌</span>
-      <span id="mcp-status-text">HTTP API: Checking...</span>
-    </div>
-    
-    <div id="ws-status" class="status disconnected" style="margin-top: 8px;">
-      <span class="status-icon">⚡</span>
-      <span id="ws-status-text">WebSocket: Checking...</span>
-    </div>
-    
-    <button id="sync-mcp" class="btn-primary" style="margin-top: 12px;">
-      🔄 Sync Session to MCP Server
+    <button class="btn btn-primary" id="login-btn">
+      Sign in with Google
     </button>
     
-    <button id="reconnect-ws" class="btn-secondary">
-      ⚡ Reconnect WebSocket
-    </button>
-    
-    <button id="copy-btn" class="btn-secondary" style="display: none;">
-      📋 Copy MCP Config (Manual)
-    </button>
-    
-    <button id="open-moodle" class="btn-secondary">
-      🔗 Open Moodle
+    <button class="btn btn-secondary" id="dev-login-btn">
+      🔧 Dev Login (localhost only)
     </button>
     
     <div class="instructions">
-      <h3>Two-Way Bridge Mode:</h3>
+      <strong>How it works:</strong>
       <ol>
-        <li>Log in to Moodle in your browser</li>
-        <li>Extension connects to MCP server via WebSocket</li>
-        <li>Cursor can control your browser to navigate Moodle</li>
-        <li>Ask: <em>"Browse my CMPS 453 course on Moodle"</em></li>
+        <li>Sign in with your Google account</li>
+        <li>Navigate to your Moodle site</li>
+        <li>Use any AI assistant with MCP support</li>
       </ol>
-      <p class="warning">⚠️ MCP server ports: HTTP 3847, WebSocket 3848</p>
     </div>
   </div>
   
-  <div id="debug-tab" class="tab-content">
-    <div class="debug-actions">
-      <button id="refresh-logs" class="btn-secondary btn-small">🔄 Refresh</button>
-      <button id="clear-logs" class="btn-secondary btn-small">🗑️ Clear</button>
+  <!-- Logged In State -->
+  <div id="logged-in" class="hidden">
+    <div class="user-info" id="user-info">
+      <img src="" alt="Profile" id="user-picture">
+      <div>
+        <div class="name" id="user-name"></div>
+        <div class="email" id="user-email"></div>
+      </div>
     </div>
-    <div id="debug-logs" class="debug-logs">
-      <div class="log-entry">Loading logs...</div>
+    
+    <div class="status-card">
+      <div class="status-row">
+        <span class="status-label">Server</span>
+        <span class="status-badge" id="server-status">
+          <span class="dot">●</span> Checking...
+        </span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Browser Bridge</span>
+        <span class="status-badge" id="ws-status">
+          <span class="dot">●</span> Checking...
+        </span>
+      </div>
+    </div>
+    
+    <button class="btn btn-secondary" id="reconnect-btn">
+      Reconnect
+    </button>
+    
+    <button class="btn btn-secondary" id="dashboard-btn">
+      Open Dashboard
+    </button>
+    
+    <button class="btn btn-danger" id="logout-btn">
+      Sign Out
+    </button>
+    
+    <div class="instructions">
+      <strong>Ready to use!</strong>
+      <ol>
+        <li>Navigate to your Moodle site in this browser</li>
+        <li>Ask your AI assistant to interact with Moodle</li>
+      </ol>
     </div>
   </div>
   
-  <script src="popup.js"></script>
+  <div class="footer">
+    © Dr. Arun Lakhotia<br>
+    University of Louisiana at Lafayette
+  </div>
+  
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

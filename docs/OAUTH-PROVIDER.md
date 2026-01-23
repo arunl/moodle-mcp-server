@@ -148,10 +148,31 @@ server/src/
 5. [x] Token endpoint (`server/src/oauth/token.ts`)
 6. [x] Userinfo endpoint (`server/src/oauth/userinfo.ts`)
 7. [x] Mount routes in main app (`server/src/index.ts`)
-8. [ ] Update MCP auth to accept OAuth tokens (`server/src/routes/mcp.ts`)
+8. [x] Update MCP auth to accept OAuth tokens (`server/src/routes/mcp.ts`)
 9. [ ] Push schema to database (`npm run db:push`)
 10. [ ] Deploy to Fly.io
 11. [ ] Test with ChatGPT
+
+## Local Testing
+
+Two test scripts are available:
+
+### Quick Token Test (No Browser Required)
+```bash
+cd server
+npm run test:oauth
+```
+This creates a test user and OAuth token directly in the database, then tests the MCP endpoint.
+
+### Full OAuth Flow Test (Browser Required)
+```bash
+cd server
+npm run test:oauth-flow
+```
+This simulates the complete OAuth flow:
+1. Run once to get authorization URL
+2. Visit URL in browser, log in, approve
+3. Run again with the authorization code to exchange for tokens
 
 ## Configuration
 

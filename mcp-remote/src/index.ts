@@ -24,16 +24,40 @@
  */
 
 import { createInterface } from 'readline';
+import { appendFileSync } from 'fs';
+import { join } from 'path';
 
 const SERVER_URL = process.env.MCP_SERVER_URL;
 const API_KEY = process.env.MCP_API_KEY || '';
 const MCP_ENDPOINT = process.env.MCP_ENDPOINT || '/mcp';
 
-// Debug logging (to stderr so it doesn't interfere with JSON-RPC on stdout)
+// Debug logging - writes to a file to avoid Cursor interpreting stderr as errors
+// When MCP_DEBUG is enabled, logs go to a temp file instead of stderr
+// This prevents Cursor from showing a red "Error" indicator for debug messages
 const DEBUG = process.env.MCP_DEBUG === '1' || process.env.MCP_DEBUG === 'true';
+const DEBUG_FILE = process.env.MCP_DEBUG_FILE; // Optional: specify log file path
+
 const debug = (msg: string) => {
   if (DEBUG) {
-    console.error(`[mcp-remote] ${msg}`);
+    const timestamp = new Date().toISOString();
+    const logLine = `${timestamp} [mcp-remote] ${msg}\n`;
+    
+    if (DEBUG_FILE) {
+      // Write to specified file
+      try {
+        appendFileSync(DEBUG_FILE, logLine);
+      } catch {
+        // Silently fail if we can't write to the file
+      }
+    } else {
+      // Write to default log file in temp directory
+      try {
+        const logPath = join(process.env.TEMP || process.env.TMP || '/tmp', 'mcp-remote-debug.log');
+        appendFileSync(logPath, logLine);
+      } catch {
+        // Silently fail if we can't write to the file
+      }
+    }
   }
 };
 

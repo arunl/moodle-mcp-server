@@ -141,15 +141,17 @@ server/src/
 
 ## Implementation Order
 
-1. [ ] Database schema (`server/src/oauth/schema.ts`)
-2. [ ] Utility functions (`server/src/oauth/utils.ts`)
-3. [ ] Discovery endpoint (`server/src/oauth/discovery.ts`)
-4. [ ] Authorization endpoint (`server/src/oauth/authorize.ts`)
-5. [ ] Token endpoint (`server/src/oauth/token.ts`)
-6. [ ] Userinfo endpoint (`server/src/oauth/userinfo.ts`)
-7. [ ] Mount routes in main app (`server/src/index.ts`)
+1. [x] Database schema (`server/src/oauth/schema.ts`)
+2. [x] Utility functions (`server/src/oauth/utils.ts`)
+3. [x] Discovery endpoint (`server/src/oauth/discovery.ts`)
+4. [x] Authorization endpoint (`server/src/oauth/authorize.ts`)
+5. [x] Token endpoint (`server/src/oauth/token.ts`)
+6. [x] Userinfo endpoint (`server/src/oauth/userinfo.ts`)
+7. [x] Mount routes in main app (`server/src/index.ts`)
 8. [ ] Update MCP auth to accept OAuth tokens (`server/src/routes/mcp.ts`)
-9. [ ] Test with ChatGPT
+9. [ ] Push schema to database (`npm run db:push`)
+10. [ ] Deploy to Fly.io
+11. [ ] Test with ChatGPT
 
 ## Configuration
 

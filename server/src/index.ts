@@ -220,6 +220,9 @@ app.route('/api', apiRoutes);
 // MCP routes
 app.route('/mcp', mcpRoutes);
 
+// Also mount MCP at root for clients that expect it there (e.g., ChatGPT)
+app.route('', mcpRoutes);
+
 // OAuth 2.1 Provider routes (for ChatGPT integration)
 // Mounts /.well-known/oauth-authorization-server and /oauth/*
 app.route('', oauthRoutes);

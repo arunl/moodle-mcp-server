@@ -1,14 +1,25 @@
 /**
  * OAuth 2.1 Provider Database Schema
  * 
- * Tables for authorization codes, access tokens, and refresh tokens
- * issued to OAuth clients like ChatGPT.
+ * Tables for OAuth clients, authorization codes, access tokens, and refresh tokens.
  * 
  * Note: user_id references users.id but we don't use Drizzle's .references()
  * here to avoid circular import issues with drizzle-kit.
  */
 
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+
+// OAuth clients (registered via RFC 7591 Dynamic Client Registration)
+export const oauthClients = sqliteTable('oauth_clients', {
+  clientId: text('client_id').primaryKey(),
+  clientSecret: text('client_secret').notNull(), // hashed
+  clientName: text('client_name'),
+  redirectUris: text('redirect_uris').notNull(), // JSON array
+  grantTypes: text('grant_types').notNull(), // JSON array
+  responseTypes: text('response_types').notNull(), // JSON array
+  tokenEndpointAuthMethod: text('token_endpoint_auth_method').default('client_secret_post'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+});
 
 // Authorization codes (short-lived, exchanged for tokens)
 export const oauthCodes = sqliteTable('oauth_codes', {

@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { oauthCodes, oauthAccessTokens, oauthRefreshTokens } from './schema.js';
+import { oauthCodes, oauthAccessTokens, oauthRefreshTokens, oauthClients } from './schema.js';
 import { generateToken, hashToken, verifyPKCE, TOKEN_EXPIRY } from './utils.js';
 
 const token = new Hono();
@@ -48,6 +48,7 @@ async function handleAuthorizationCodeGrant(c: any, body: any) {
   const redirectUri = body.redirect_uri as string;
   const codeVerifier = body.code_verifier as string;
   const clientId = body.client_id as string | undefined;
+  const clientSecret = body.client_secret as string | undefined;
 
   // Validate required parameters
   if (!code || !redirectUri || !codeVerifier) {
@@ -55,6 +56,48 @@ async function handleAuthorizationCodeGrant(c: any, body: any) {
       error: 'invalid_request',
       error_description: 'code, redirect_uri, and code_verifier are required',
     }, 400);
+  }
+
+  // If client_id is provided, validate client credentials
+  if (clientId) {
+    const [client] = await db
+      .select()
+      .from(oauthClients)
+      .where(eq(oauthClients.clientId, clientId));
+
+    if (!client) {
+      return c.json({
+        error: 'invalid_client',
+        error_description: 'Client not found',
+      }, 401);
+    }
+
+    // Validate client_secret if using client_secret_post auth method
+    if (client.tokenEndpointAuthMethod === 'client_secret_post') {
+      if (!clientSecret) {
+        return c.json({
+          error: 'invalid_client',
+          error_description: 'client_secret is required',
+        }, 401);
+      }
+
+      const secretHash = await hashToken(clientSecret);
+      if (secretHash !== client.clientSecret) {
+        return c.json({
+          error: 'invalid_client',
+          error_description: 'Invalid client_secret',
+        }, 401);
+      }
+    }
+
+    // Validate redirect_uri is registered for this client
+    const allowedUris = JSON.parse(client.redirectUris);
+    if (!allowedUris.includes(redirectUri)) {
+      return c.json({
+        error: 'invalid_grant',
+        error_description: 'redirect_uri not registered for this client',
+      }, 400);
+    }
   }
 
   // Find the authorization code

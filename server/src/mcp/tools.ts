@@ -772,6 +772,28 @@ Examples:
     },
   },
   {
+    name: 'get_forum_discussion',
+    description: `Get the full content of a forum discussion including all posts and replies.
+    
+Returns:
+- Discussion title and ID
+- All posts with author, date, and full text content
+- Post hierarchy (original post vs replies)
+- Useful for reading team formations, introductions, or any discussion content
+
+Example: get_forum_discussion(discussion_id=1234567)`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        discussion_id: {
+          type: 'number',
+          description: 'The discussion ID (d parameter from mod/forum/discuss.php?d=...). Use forum_list_discussions or find_forum_discussion to find this.',
+        },
+      },
+      required: ['discussion_id'],
+    },
+  },
+  {
     name: 'delete_forum_discussion',
     description: `Delete a forum discussion/post.
     

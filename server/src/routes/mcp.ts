@@ -922,6 +922,23 @@ async function handleToolCall(
         result = { success: true, forumId: forumIdToUse, subject: args.subject };
         break;
 
+      case 'get_forum_discussion':
+        // Navigate to the discussion page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/mod/forum/discuss.php?d=${args.discussion_id}`,
+          force: true,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: '.forumpost, .forum-post, [data-region="post"]', timeout: 10000 });
+        
+        // Extract all posts with their content
+        const discussionContent = await sendBrowserCommand(userId, 'extract_discussion_replies', {});
+        
+        result = {
+          discussionId: args.discussion_id,
+          ...discussionContent?.data,
+        };
+        break;
+
       case 'find_forum_discussion':
         // Navigate to forum page
         await sendBrowserCommand(userId, 'navigate', {

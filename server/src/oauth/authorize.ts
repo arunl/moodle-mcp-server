@@ -30,7 +30,8 @@ const authorize = new Hono();
  * - code_challenge_method=S256
  */
 authorize.get('/authorize', async (c) => {
-  const {
+  // Try to get params from URL query first
+  let {
     response_type,
     client_id,
     redirect_uri,
@@ -39,6 +40,25 @@ authorize.get('/authorize', async (c) => {
     code_challenge,
     code_challenge_method,
   } = c.req.query();
+
+  // If no query params, check if we're returning from Google login (params in cookie)
+  if (!response_type && !redirect_uri) {
+    const storedParams = getCookie(c, 'oauth_provider_params');
+    if (storedParams) {
+      try {
+        const params = JSON.parse(storedParams);
+        response_type = 'code'; // We only support code
+        client_id = params.client_id;
+        redirect_uri = params.redirect_uri;
+        scope = params.scope;
+        state = params.state;
+        code_challenge = params.code_challenge;
+        code_challenge_method = params.code_challenge_method;
+      } catch {
+        // Invalid cookie, continue with validation which will fail
+      }
+    }
+  }
 
   // Validate required parameters
   if (response_type !== 'code') {
@@ -63,23 +83,25 @@ authorize.get('/authorize', async (c) => {
     }, 400);
   }
 
-  // Store OAuth params in cookie for after Google login
-  const oauthParams = JSON.stringify({
-    client_id: client_id || null,
-    redirect_uri,
-    scope: scope || 'mcp',
-    state: state || '',
-    code_challenge,
-    code_challenge_method,
-  });
+  // Store OAuth params in cookie for after Google login (only if from URL)
+  if (c.req.query().response_type) {
+    const oauthParams = JSON.stringify({
+      client_id: client_id || null,
+      redirect_uri,
+      scope: scope || 'mcp',
+      state: state || '',
+      code_challenge,
+      code_challenge_method,
+    });
 
-  setCookie(c, 'oauth_provider_params', oauthParams, {
-    path: '/',
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 10, // 10 minutes
-    sameSite: 'Lax',
-  });
+    setCookie(c, 'oauth_provider_params', oauthParams, {
+      path: '/',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 10, // 10 minutes
+      sameSite: 'Lax',
+    });
+  }
 
   // Check if user is already logged in
   let accessToken = getCookie(c, 'access_token');

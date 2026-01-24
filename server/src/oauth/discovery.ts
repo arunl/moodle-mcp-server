@@ -18,6 +18,9 @@ discovery.get('/oauth-authorization-server', (c) => {
     authorization_endpoint: `${baseUrl}/oauth/authorize`,
     token_endpoint: `${baseUrl}/oauth/token`,
     
+    // RFC 7591 Dynamic Client Registration
+    registration_endpoint: `${baseUrl}/oauth/register`,
+    
     // Supported features
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -27,12 +30,8 @@ discovery.get('/oauth-authorization-server', (c) => {
     // Scopes
     scopes_supported: ['openid', 'profile', 'email', 'mcp'],
     
-    // Optional but useful endpoints
+    // Optional endpoints
     userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
-    revocation_endpoint: `${baseUrl}/oauth/revoke`,
-    
-    // Documentation
-    service_documentation: `${baseUrl}/docs`,
   });
 });
 

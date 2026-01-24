@@ -43,3 +43,6 @@ start-dev-server.sh
 # OAuth test files (contain tokens)
 test-oauth-token.txt
 test-pkce-verifier.txt
+
+# Local SQLite database
+*.db

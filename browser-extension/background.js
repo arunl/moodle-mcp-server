@@ -1533,6 +1533,15 @@ async function handleExtractDiscussionReplies(id, params, tab) {
         // Get post ID
         const postId = post.id || post.dataset.postId || `post-${index}`;
         
+        // Get post body/content - try multiple selectors
+        const contentEl = post.querySelector(
+          '.post-content-container, .posting.fullpost, .post-content, .content, .forumpost-body, [data-region="content"]'
+        );
+        const content = contentEl ? contentEl.textContent.trim() : null;
+        
+        // Also get HTML content for rich text (tables, lists, etc.)
+        const contentHtml = contentEl ? contentEl.innerHTML : null;
+        
         // Check if this is the original post (first one) or a reply
         const isOriginal = index === 0 || post.classList.contains('firstpost');
         
@@ -1549,6 +1558,8 @@ async function handleExtractDiscussionReplies(id, params, tab) {
             postId,
             author,
             date,
+            content,  // Plain text content
+            contentHtml,  // HTML content for rich formatting
             isOriginal,
             parentId,
           });

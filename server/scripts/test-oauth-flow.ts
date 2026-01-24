@@ -17,7 +17,7 @@
 
 import crypto from 'crypto';
 
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:8080';
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 const REDIRECT_URI = 'http://localhost:3000/callback'; // Fake callback URL
 const CLIENT_ID = 'test-client'; // Optional
 
@@ -170,14 +170,15 @@ async function main() {
 
     } catch (error: any) {
       console.log(`   ❌ Failed: ${error.message}`);
-      process.exit(1);
+      setTimeout(() => process.exit(1), 100);
+      return;
     }
   }
 
-  process.exit(0);
+  setTimeout(() => process.exit(0), 100);
 }
 
 main().catch((error) => {
   console.error('Error:', error);
-  process.exit(1);
+  setTimeout(() => process.exit(1), 100);
 });

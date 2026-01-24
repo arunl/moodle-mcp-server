@@ -82,12 +82,33 @@ authorize.get('/authorize', async (c) => {
   });
 
   // Check if user is already logged in
-  const accessToken = getCookie(c, 'access_token');
+  let accessToken = getCookie(c, 'access_token');
   
   if (!accessToken) {
-    // Not logged in — redirect to Google OAuth
-    // The oauth_provider_params cookie will persist through the flow
-    return c.redirect('/auth/google?oauth_provider=true');
+    // Dev mode bypass: auto-login without Google
+    if (process.env.NODE_ENV !== 'production') {
+      const devUser = await getOrCreateDevUser();
+      if (devUser) {
+        // Import JWT creation
+        const { createAccessToken } = await import('../auth/jwt.js');
+        accessToken = await createAccessToken(devUser.id, devUser.email, devUser.name || undefined);
+        
+        // Set cookie so subsequent requests are authenticated
+        setCookie(c, 'access_token', accessToken, {
+          path: '/',
+          httpOnly: true,
+          maxAge: 60 * 15,
+          sameSite: 'Lax',
+        });
+        
+        console.log(`[OAuth] Dev mode: auto-logged in as ${devUser.email}`);
+      }
+    }
+    
+    // Still no token? Redirect to Google
+    if (!accessToken) {
+      return c.redirect('/auth/google?oauth_provider=true');
+    }
   }
 
   // User is logged in — verify token and show consent screen
@@ -344,6 +365,25 @@ function showConsentScreen(c: any, user: any, scope: string) {
 </html>`;
 
   return c.html(html);
+}
+
+/**
+ * Dev mode helper: get or create a dev user for testing OAuth flow
+ */
+async function getOrCreateDevUser() {
+  const DEV_EMAIL = 'oauth-dev@localhost';
+  
+  let [user] = await db.select().from(users).where(eq(users.email, DEV_EMAIL));
+  
+  if (!user) {
+    [user] = await db.insert(users).values({
+      email: DEV_EMAIL,
+      name: 'OAuth Dev User',
+      googleId: 'oauth-dev-bypass',
+    }).returning();
+  }
+  
+  return user;
 }
 
 export default authorize;

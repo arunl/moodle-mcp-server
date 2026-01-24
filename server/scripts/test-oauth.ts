@@ -20,7 +20,7 @@ import { oauthAccessTokens } from '../src/oauth/schema.js';
 import { generateToken, hashToken, TOKEN_EXPIRY } from '../src/oauth/utils.js';
 import { eq } from 'drizzle-orm';
 
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:8080';
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 const TEST_USER_EMAIL = 'oauth-test@example.com';
 
 async function main() {
@@ -141,7 +141,8 @@ async function main() {
   fs.writeFileSync('test-oauth-token.txt', accessToken);
   console.log(`\n💾 Token saved to: test-oauth-token.txt`);
 
-  process.exit(0);
+  // Give time for database to close cleanly
+  setTimeout(() => process.exit(0), 100);
 }
 
 main().catch((error) => {

@@ -5,6 +5,8 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { hashApiKey } from '../auth/jwt.js';
 import { connectionManager, BrowserCommand } from '../bridge/connection-manager.js';
 import { moodleTools, generateCommandId } from '../mcp/tools.js';
+import { oauthAccessTokens } from '../oauth/schema.js';
+import { hashToken } from '../oauth/utils.js';
 
 /**
  * IMPORTANT: Moodle Content Security Policy (CSP) Limitations
@@ -29,13 +31,8 @@ import { moodleTools, generateCommandId } from '../mcp/tools.js';
 const mcp = new Hono();
 
 // Middleware to verify API key
-async function verifyApiKey(authHeader: string | undefined): Promise<{ userId: string; email: string } | null> {
-  if (!authHeader?.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const key = authHeader.substring(7);
-  const keyHash = await hashApiKey(key);
+async function verifyApiKey(token: string): Promise<{ userId: string; email: string } | null> {
+  const keyHash = await hashApiKey(token);
 
   const [apiKey] = await db
     .select({
@@ -61,9 +58,58 @@ async function verifyApiKey(authHeader: string | undefined): Promise<{ userId: s
   return user ? { userId: user.id, email: user.email } : null;
 }
 
+// Middleware to verify OAuth 2.1 access token (for ChatGPT)
+async function verifyOAuthToken(token: string): Promise<{ userId: string; email: string } | null> {
+  const tokenHash = await hashToken(token);
+
+  const [storedToken] = await db
+    .select()
+    .from(oauthAccessTokens)
+    .where(eq(oauthAccessTokens.token, tokenHash));
+
+  if (!storedToken) {
+    return null;
+  }
+
+  // Check expiration
+  if (new Date() > storedToken.expiresAt) {
+    // Token expired, delete it
+    await db.delete(oauthAccessTokens).where(eq(oauthAccessTokens.token, tokenHash));
+    return null;
+  }
+
+  // Get user email
+  const [user] = await db.select().from(users).where(eq(users.id, storedToken.userId));
+  
+  return user ? { userId: user.id, email: user.email } : null;
+}
+
+// Unified auth verification - tries API key first, then OAuth token
+async function verifyAuth(authHeader: string | undefined): Promise<{ userId: string; email: string } | null> {
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+
+  // Try API key first (most common for Cursor/mcp-remote)
+  const apiKeyAuth = await verifyApiKey(token);
+  if (apiKeyAuth) {
+    return apiKeyAuth;
+  }
+
+  // Try OAuth token (for ChatGPT)
+  const oauthAuth = await verifyOAuthToken(token);
+  if (oauthAuth) {
+    return oauthAuth;
+  }
+
+  return null;
+}
+
 // MCP JSON-RPC handler
 mcp.post('/', async (c) => {
-  const auth = await verifyApiKey(c.req.header('Authorization'));
+  const auth = await verifyAuth(c.req.header('Authorization'));
   
   if (!auth) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -86,7 +132,7 @@ mcp.post('/', async (c) => {
 
 // MCP SSE endpoint
 mcp.get('/sse', async (c) => {
-  const auth = await verifyApiKey(c.req.header('Authorization'));
+  const auth = await verifyAuth(c.req.header('Authorization'));
   
   if (!auth) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -940,8 +986,8 @@ async function handleToolCall(
         }
         
         // Extract sesskey from the page (required for delete confirmation)
-        const deleteSesskeyResult = await sendBrowserCommand(userId, 'extract_sesskey', {});
-        if (!deleteSesskeyResult?.sesskey) {
+        const forumSesskeyResult = await sendBrowserCommand(userId, 'extract_sesskey', {});
+        if (!forumSesskeyResult?.sesskey) {
           result = { error: 'Could not extract sesskey. User may not have permission to delete.' };
           break;
         }
@@ -950,7 +996,7 @@ async function handleToolCall(
         // This bypasses the confirmation modal click which can be unreliable
         // See docs/BEST-PRACTICES.md for rationale
         await sendBrowserCommand(userId, 'navigate', {
-          url: `/mod/forum/post.php?delete=${postIdResult.postId}&confirm=1&sesskey=${deleteSesskeyResult.sesskey}`,
+          url: `/mod/forum/post.php?delete=${postIdResult.postId}&confirm=1&sesskey=${forumSesskeyResult.sesskey}`,
         });
         
         // Wait for redirect to forum view (indicates successful deletion)

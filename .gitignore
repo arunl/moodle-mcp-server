@@ -39,3 +39,10 @@ start-dev-server.sh
 
 # Course data files (personal/student data)
 453/
+
+# OAuth test files (contain tokens)
+test-oauth-token.txt
+test-pkce-verifier.txt
+
+# Local SQLite database
+*.db

@@ -7,6 +7,7 @@ import { createNodeWebSocket } from '@hono/node-ws';
 import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 import mcpRoutes from './routes/mcp.js';
+import oauthRoutes from './oauth/index.js';
 import { connectionManager } from './bridge/connection-manager.js';
 import { verifyToken } from './auth/jwt.js';
 import { db, users } from './db/index.js';
@@ -218,6 +219,10 @@ app.route('/api', apiRoutes);
 
 // MCP routes
 app.route('/mcp', mcpRoutes);
+
+// OAuth 2.1 Provider routes (for ChatGPT integration)
+// Mounts /.well-known/oauth-authorization-server and /oauth/*
+app.route('', oauthRoutes);
 
 // WebSocket endpoint for browser extensions
 app.get(

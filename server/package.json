@@ -10,7 +10,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "test:oauth": "tsx scripts/test-oauth.ts",
+    "test:oauth-flow": "tsx scripts/test-oauth-flow.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

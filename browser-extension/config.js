@@ -2,7 +2,7 @@
 // Uncomment ONE of the following SERVER_URL lines:
 
 // Local development:
-// export const SERVER_URL = 'http://localhost:3000';
+// export const SERVER_URL = 'http://localhost:8080';
 
 // Production (Fly.io):
 export const SERVER_URL = 'https://moodle-mcp-server.fly.dev';

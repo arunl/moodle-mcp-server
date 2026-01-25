@@ -44,8 +44,5 @@ start-dev-server.sh
 test-oauth-token.txt
 test-pkce-verifier.txt
 
-# PII test fixtures (contains real student data)
-server/src/pii/__tests__/fixtures/
-
 # Local SQLite database
 *.db

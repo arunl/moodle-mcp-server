@@ -939,59 +939,6 @@ Example: bulk_send_message(user_ids=[123, 456, 789], message="Reminder: Please p
       required: ['user_ids', 'message'],
     },
   },
-
-  // -----------------------------
-  // File Export (PII Unmasking)
-  // -----------------------------
-  {
-    name: 'create_download_file',
-    description: `Create a downloadable file with unmasked PII.
-
-When you generate reports, team lists, or other documents containing student information,
-use this tool to create a downloadable file. The file will be stored on the server with
-masked PII, and when the instructor downloads it, the PII will be automatically unmasked.
-
-Supported formats:
-- CSV: text/csv - Comma-separated values
-- TSV: text/tab-separated-values - Tab-separated values
-- TXT: text/plain - Plain text
-- DOCX: application/vnd.openxmlformats-officedocument.wordprocessingml.document
-- XLSX: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-- PPTX: application/vnd.openxmlformats-officedocument.presentationml.presentation
-
-The content should contain mask tokens (e.g., M12345:name, M12345:email, M12345:CID)
-which will be replaced with actual names when the instructor downloads the file.
-
-Example usage:
-1. Generate a CSV with team assignments using masked names
-2. Call this tool with the CSV content
-3. The tool returns a download URL
-4. Share the URL with the instructor
-
-Returns: { download_url, file_id, expires_at, filename }`,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        content: {
-          type: 'string',
-          description: 'The file content (text for CSV/TXT, base64 for binary formats like DOCX/XLSX/PPTX).',
-        },
-        filename: {
-          type: 'string',
-          description: 'The filename with extension (e.g., "team-assignments.csv", "report.docx").',
-        },
-        course_id: {
-          type: 'number',
-          description: 'The course ID for roster lookup (required for PII unmasking).',
-        },
-        is_base64: {
-          type: 'boolean',
-          description: 'Set to true if content is base64-encoded (required for binary formats). Default: false.',
-        },
-      },
-      required: ['content', 'filename', 'course_id'],
-    },
-  },
 ];
 
 // Generate unique command ID

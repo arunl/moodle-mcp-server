@@ -1085,7 +1085,35 @@ const dashboardPageHtml = `
           <p style="color: var(--text-secondary); font-style: italic;">No files available</p>
         </div>
         
-        <button class="btn btn-secondary" onclick="loadFiles()" style="margin-top: 1rem;">🔄 Refresh</button>
+        <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-secondary" onclick="loadFiles()">🔄 Refresh</button>
+          <button class="btn btn-secondary" onclick="toggleUploadForm()">📤 Upload File</button>
+        </div>
+        
+        <div id="upload-form" style="display:none;margin-top:1rem;padding:1rem;background:var(--bg-secondary);border-radius:8px;">
+          <h4 style="margin:0 0 0.75rem 0;">Upload Masked File</h4>
+          <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:1rem;">
+            Upload a file containing masked PII tokens (M####:name, M####:email, etc.). 
+            The file will be unmasked when downloaded.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:0.75rem;">
+            <div>
+              <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">File (CSV, TXT, DOCX, XLSX, PPTX)</label>
+              <input type="file" id="upload-file" accept=".csv,.txt,.tsv,.docx,.xlsx,.pptx" 
+                style="width:100%;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
+            </div>
+            <div>
+              <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">Course ID</label>
+              <input type="number" id="upload-course-id" placeholder="e.g., 56569" 
+                style="width:100%;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
+            </div>
+            <div style="display:flex;gap:0.5rem;">
+              <button class="btn btn-primary" onclick="uploadFile()">Upload</button>
+              <button class="btn btn-secondary" onclick="toggleUploadForm()">Cancel</button>
+            </div>
+            <div id="upload-status" style="font-size:0.85rem;"></div>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -1269,6 +1297,71 @@ const dashboardPageHtml = `
         }
       } catch (error) {
         alert('Error deleting file');
+      }
+    }
+    
+    function toggleUploadForm() {
+      const form = document.getElementById('upload-form');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+      document.getElementById('upload-status').innerHTML = '';
+    }
+    
+    async function uploadFile() {
+      const fileInput = document.getElementById('upload-file');
+      const courseIdInput = document.getElementById('upload-course-id');
+      const statusDiv = document.getElementById('upload-status');
+      
+      const file = fileInput.files[0];
+      const courseId = parseInt(courseIdInput.value, 10);
+      
+      if (!file) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a file</span>';
+        return;
+      }
+      
+      if (!courseId) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please enter a course ID</span>';
+        return;
+      }
+      
+      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Uploading...</span>';
+      
+      try {
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const base64 = e.target.result.split(',')[1]; // Remove data:xxx;base64, prefix
+          
+          const res = await fetch('/files/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: base64,
+              filename: file.name,
+              course_id: courseId,
+              is_base64: true
+            })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            statusDiv.innerHTML = \`
+              <span style="color:var(--success)">✓ Uploaded successfully!</span><br/>
+              <a href="\${data.download_url}" style="color:var(--primary);" download>Download unmasked file</a>
+            \`;
+            fileInput.value = '';
+            loadFiles();
+          } else {
+            const err = await res.json();
+            statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${err.error || 'Upload failed'}</span>\`;
+          }
+        };
+        reader.onerror = () => {
+          statusDiv.innerHTML = '<span style="color:var(--danger)">Error reading file</span>';
+        };
+        reader.readAsDataURL(file);
+      } catch (error) {
+        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
       }
     }
     

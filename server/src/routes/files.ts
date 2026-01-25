@@ -52,8 +52,27 @@ function generateFileId(): string {
  *   - course_id: Course ID for roster lookup
  */
 files.post('/upload', async (c) => {
-  // Get user from session/auth (simplified - you'd check auth header)
-  const userId = c.req.header('X-User-Id');
+  // Get user from X-User-Id header (API) or cookie (dashboard)
+  let userId = c.req.header('X-User-Id');
+  
+  // If no X-User-Id header, try cookie-based auth (for dashboard uploads)
+  if (!userId) {
+    const { getCookie } = await import('hono/cookie');
+    const { verifyToken } = await import('../auth/jwt.js');
+    
+    const accessToken = getCookie(c, 'access_token');
+    if (accessToken) {
+      try {
+        const payload = await verifyToken(accessToken);
+        if (payload?.sub) {
+          userId = payload.sub;
+        }
+      } catch {
+        // Token invalid, continue to check other auth methods
+      }
+    }
+  }
+  
   if (!userId) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
@@ -143,6 +162,70 @@ files.post('/upload', async (c) => {
     expires_at: expiresAt.toISOString(),
     filename,
   });
+});
+
+/**
+ * List all files for the authenticated user
+ * 
+ * GET /files/list
+ * Requires cookie auth (from dashboard)
+ * 
+ * NOTE: This route MUST be defined before /:id to avoid being caught by the wildcard
+ */
+files.get('/list', async (c) => {
+  // Get userId from cookie-based auth (dashboard uses cookies)
+  const { getCookie } = await import('hono/cookie');
+  const { verifyToken } = await import('../auth/jwt.js');
+  
+  const accessToken = getCookie(c, 'access_token');
+  if (!accessToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  try {
+    const payload = await verifyToken(accessToken);
+    if (!payload || !payload.sub) {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+    
+    const userId = payload.sub;
+    
+    // Get all non-expired files for this user
+    const userFiles = await db
+      .select({
+        id: piiFiles.id,
+        filename: piiFiles.filename,
+        mimeType: piiFiles.mimeType,
+        courseId: piiFiles.courseId,
+        isUnmasked: piiFiles.isUnmasked,
+        expiresAt: piiFiles.expiresAt,
+        createdAt: piiFiles.createdAt,
+        downloadedAt: piiFiles.downloadedAt,
+      })
+      .from(piiFiles)
+      .where(eq(piiFiles.ownerUserId, userId));
+    
+    // Filter out expired and format for response
+    const now = new Date();
+    const activeFiles = userFiles
+      .filter(f => f.expiresAt > now)
+      .map(f => ({
+        id: f.id,
+        filename: f.filename,
+        mime_type: f.mimeType,
+        course_id: f.courseId,
+        is_downloaded: f.isUnmasked,
+        expires_at: f.expiresAt.toISOString(),
+        created_at: f.createdAt?.toISOString(),
+        downloaded_at: f.downloadedAt?.toISOString(),
+        time_remaining_ms: f.expiresAt.getTime() - now.getTime(),
+      }));
+    
+    return c.json({ files: activeFiles });
+  } catch (error) {
+    console.error('Error listing files:', error);
+    return c.json({ error: 'Failed to list files' }, 500);
+  }
 });
 
 /**
@@ -242,68 +325,6 @@ files.get('/:id/status', async (c) => {
     created_at: file.createdAt?.toISOString(),
     downloaded_at: file.downloadedAt?.toISOString(),
   });
-});
-
-/**
- * List all files for the authenticated user
- * 
- * GET /files/list
- * Requires cookie auth (from dashboard)
- */
-files.get('/list', async (c) => {
-  // Get userId from cookie-based auth (dashboard uses cookies)
-  const { getCookie } = await import('hono/cookie');
-  const { verifyToken } = await import('../auth/jwt.js');
-  
-  const accessToken = getCookie(c, 'access_token');
-  if (!accessToken) {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
-  
-  try {
-    const payload = await verifyToken(accessToken);
-    if (!payload || !payload.sub) {
-      return c.json({ error: 'Invalid token' }, 401);
-    }
-    
-    const userId = payload.sub;
-    
-    // Get all non-expired files for this user
-    const userFiles = await db
-      .select({
-        id: piiFiles.id,
-        filename: piiFiles.filename,
-        mimeType: piiFiles.mimeType,
-        courseId: piiFiles.courseId,
-        isUnmasked: piiFiles.isUnmasked,
-        expiresAt: piiFiles.expiresAt,
-        createdAt: piiFiles.createdAt,
-        downloadedAt: piiFiles.downloadedAt,
-      })
-      .from(piiFiles)
-      .where(eq(piiFiles.ownerUserId, userId));
-    
-    // Filter out expired and format for response
-    const now = new Date();
-    const activeFiles = userFiles
-      .filter(f => f.expiresAt > now)
-      .map(f => ({
-        id: f.id,
-        filename: f.filename,
-        mime_type: f.mimeType,
-        course_id: f.courseId,
-        is_downloaded: f.isUnmasked,
-        expires_at: f.expiresAt.toISOString(),
-        created_at: f.createdAt?.toISOString(),
-        downloaded_at: f.downloadedAt?.toISOString(),
-        time_remaining_ms: f.expiresAt.getTime() - now.getTime(),
-      }));
-    
-    return c.json({ files: activeFiles });
-  } catch (error) {
-    console.error('Error listing files:', error);
-    return c.json({ error: 'Failed to list files' }, 500);
-  }
 });
 
 /**

@@ -1,0 +1,86 @@
+=============================================================
+        CMPS453 COURSE PROGRESS REPORT - MASKED VERSION
+=============================================================
+
+Generated: January 25, 2026
+Course: Intro to Software Methodology
+
+-------------------------------------------------------------
+                    EXECUTIVE SUMMARY
+-------------------------------------------------------------
+
+This report covers 42 students enrolled in CMPS453. Notable 
+performers include M34538:name and M18275:name who have 
+shown excellent participation in forums.
+
+The instructor M5741:name has noted that M19280:name leads
+the class in forum replies with 10 responses to classmates.
+
+-------------------------------------------------------------
+                    TOP PERFORMERS
+-------------------------------------------------------------
+
+1. M19280:name (M19280:CID@louisiana.edu)
+   - Forum replies: 10
+   - Contact: M19280:email
+
+2. M18275:name (M18275:CID@louisiana.edu)  
+   - Forum replies: 9
+   - Contact: M18275:email
+
+3. M40419:name (M40419:CID@louisiana.edu)
+   - Forum replies: 7
+   - Contact: M40419:email
+
+-------------------------------------------------------------
+                 NON-PARTICIPANTS
+-------------------------------------------------------------
+
+The following students have NOT posted in the Self-Introduction 
+forum and should be contacted:
+
+  * M19009:name - Email: M19009:email
+  * M1942:name - Email: M1942:email  
+  * M35227:name - Email: M35227:email
+  * M20896:name - Email: M20896:email
+  * M65419:name - Email: M65419:email
+
+-------------------------------------------------------------
+                    TEAM ASSIGNMENTS
+-------------------------------------------------------------
+
+Team Alpha:
+  - Lead: M34538:name (M34538:CID)
+  - Member: M41292:name (M41292:CID)
+  - Member: M33324:name (M33324:CID)
+
+Team Beta:
+  - Lead: M40240:name (M40240:CID)
+  - Member: M54580:name (M54580:CID)
+  - Member: M52118:name (M52118:CID)
+
+-------------------------------------------------------------
+                  ATTENDANCE NOTES
+-------------------------------------------------------------
+
+M15866:name arrived late on Jan 21.
+M33280:name was absent on Jan 23 - contacted via M33280:email.
+M9601:name requested extension - approved by M5741:name.
+
+-------------------------------------------------------------
+                    GRADE SUMMARY
+-------------------------------------------------------------
+
+| Student ID | Name           | HW Avg | Forum | Total |
+|------------|----------------|--------|-------|-------|
+| M34538:CID | M34538:name    |   95   |  100  |  97   |
+| M41292:CID | M41292:name    |   88   |   90  |  89   |
+| M18275:CID | M18275:name    |   92   |  100  |  95   |
+| M40240:CID | M40240:name    |   85   |   95  |  89   |
+
+-------------------------------------------------------------
+                    END OF REPORT
+-------------------------------------------------------------
+
+Report prepared by: M5741:name
+Questions? Contact M5741:email

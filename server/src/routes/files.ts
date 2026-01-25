@@ -195,12 +195,14 @@ files.get('/:id', async (c) => {
     })
     .where(eq(piiFiles.id, fileId));
   
-  // Set headers for download
-  c.header('Content-Type', unmasked.mimeType);
-  c.header('Content-Disposition', `attachment; filename="${unmasked.filename}"`);
-  c.header('Content-Length', unmasked.buffer.length.toString());
-  
-  return c.body(unmasked.buffer);
+  // Return file as response with proper headers
+  return new Response(unmasked.buffer, {
+    headers: {
+      'Content-Type': unmasked.mimeType,
+      'Content-Disposition': `attachment; filename="${unmasked.filename}"`,
+      'Content-Length': unmasked.buffer.length.toString(),
+    },
+  });
 });
 
 /**

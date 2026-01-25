@@ -49,3 +49,6 @@ server/src/pii/__tests__/fixtures/
 
 # Local SQLite database
 *.db
+
+# Generated version file (created at build time)
+server/version.json

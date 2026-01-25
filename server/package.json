@@ -12,7 +12,10 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "test:oauth": "tsx scripts/test-oauth.ts",
-    "test:oauth-flow": "tsx scripts/test-oauth-flow.ts"
+    "test:oauth-flow": "tsx scripts/test-oauth-flow.ts",
+    "test:pii": "tsx src/pii/__tests__/mask.test.ts",
+    "test:pii-real": "tsx src/pii/__tests__/mask-real-data.test.ts",
+    "capture:test-data": "tsx scripts/capture-test-data.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

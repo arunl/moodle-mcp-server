@@ -1,4 +1,8 @@
-import { type PiiRosterEntry, buildRosterLookup } from './roster.js';
+import { type PiiRosterEntry } from './schema.js';
+import { buildRosterLookup } from './roster.js';
+
+// Re-export for convenience
+export { buildRosterLookup };
 
 /**
  * Mask token format: M{moodleId}:{type}
@@ -81,25 +85,32 @@ export function maskPII(text: string, roster: PiiRosterEntry[]): string {
     (a, b) => b.displayName.length - a.displayName.length
   );
   
-  // 1. Replace KNOWN names with reversible tokens
+  // IMPORTANT: Order matters! Replace longer/more specific patterns first:
+  // 1. Emails (longest, may contain student IDs as substrings)
+  // 2. Names (medium length)
+  // 3. Student IDs (shortest, may be substrings of emails)
+  
+  // 1. Replace KNOWN emails with reversible tokens FIRST
+  // (emails like c00509352@louisiana.edu contain the student ID)
+  for (const entry of roster) {
+    const emailPattern = new RegExp(escapeRegex(entry.email), 'gi');
+    masked = masked.replace(emailPattern, `M${entry.moodleUserId}:email`);
+  }
+  
+  // 2. Replace KNOWN names with reversible tokens
   for (const entry of sortedByNameLength) {
     // Case-insensitive replacement but preserve token format
     const namePattern = new RegExp(escapeRegex(entry.displayName), 'gi');
     masked = masked.replace(namePattern, `M${entry.moodleUserId}:name`);
   }
   
-  // 2. Replace KNOWN student IDs with reversible tokens
+  // 3. Replace KNOWN student IDs with reversible tokens LAST
+  // (student IDs might be substrings of already-masked emails)
   for (const entry of roster) {
     if (entry.studentId) {
       const cidPattern = new RegExp(escapeRegex(entry.studentId), 'gi');
       masked = masked.replace(cidPattern, `M${entry.moodleUserId}:CID`);
     }
-  }
-  
-  // 3. Replace KNOWN emails with reversible tokens
-  for (const entry of roster) {
-    const emailPattern = new RegExp(escapeRegex(entry.email), 'gi');
-    masked = masked.replace(emailPattern, `M${entry.moodleUserId}:email`);
   }
   
   // 4. Apply one-way masking to remaining PII

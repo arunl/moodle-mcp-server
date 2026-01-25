@@ -1,6 +1,9 @@
 # Deploy to Fly.io
 # 
-# This workflow deploys the MCP server to Fly.io when pushing to master.
+# This workflow deploys the MCP server to Fly.io:
+# - Automatically on merge/push to master (server changes only)
+# - Manually from any branch via workflow_dispatch
+#
 # It passes the commit SHA and build date as build arguments for version tracking.
 #
 # Required secrets:
@@ -15,7 +18,13 @@ on:
     paths:
       - 'server/**'
       - '.github/workflows/deploy.yml'
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:
+    # Allow manual triggering from any branch
+    inputs:
+      environment:
+        description: 'Deployment note (optional)'
+        required: false
+        default: 'Manual deployment'
 
 jobs:
   deploy:

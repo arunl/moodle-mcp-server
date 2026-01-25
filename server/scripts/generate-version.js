@@ -4,17 +4,52 @@
  * 
  * Run before build: node scripts/generate-version.js
  * This file is read by the server at startup.
+ * 
+ * Priority:
+ * 1. Environment variables (COMMIT_SHA, BUILD_DATE) - set by CI/CD
+ * 2. Git commands - for local development
+ * 3. Fallback to "unknown"
  */
 
 import { execSync } from 'child_process';
-import { writeFileSync } from 'fs';
+import { writeFileSync, existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const outputPath = join(__dirname, '..', 'version.json');
 
-function getGitInfo() {
+function getVersionInfo() {
+  // Priority 1: Check if version.json already exists with valid commit (created by Dockerfile)
+  if (existsSync(outputPath)) {
+    try {
+      const existing = JSON.parse(readFileSync(outputPath, 'utf-8'));
+      if (existing.commit && existing.commit !== 'unknown' && existing.commitFull && existing.commitFull !== 'unknown') {
+        console.log(`✅ Using existing version.json: v${existing.commit}`);
+        return null; // Don't overwrite
+      }
+    } catch {
+      // Invalid JSON, regenerate
+    }
+  }
+
+  // Priority 2: Environment variables (set by CI/CD build args)
+  const envCommit = process.env.COMMIT_SHA;
+  const envBuildDate = process.env.BUILD_DATE;
+  
+  if (envCommit && envCommit !== 'unknown') {
+    console.log(`Using environment variables for version info`);
+    return {
+      commit: envCommit.slice(0, 7),
+      commitFull: envCommit,
+      commitDate: null,
+      branch: 'master',
+      buildDate: envBuildDate || new Date().toISOString(),
+    };
+  }
+
+  // Priority 3: Git commands (local development)
   try {
     const commitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
     const commitShort = commitSha.slice(0, 7);
@@ -40,8 +75,9 @@ function getGitInfo() {
   }
 }
 
-const versionInfo = getGitInfo();
-const outputPath = join(__dirname, '..', 'version.json');
+const versionInfo = getVersionInfo();
 
-writeFileSync(outputPath, JSON.stringify(versionInfo, null, 2));
-console.log(`✅ Generated version.json: v${versionInfo.commit} (${versionInfo.branch})`);
+if (versionInfo) {
+  writeFileSync(outputPath, JSON.stringify(versionInfo, null, 2));
+  console.log(`✅ Generated version.json: v${versionInfo.commit} (${versionInfo.branch})`);
+}

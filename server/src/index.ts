@@ -8,10 +8,12 @@ import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 import mcpRoutes from './routes/mcp.js';
 import oauthRoutes from './oauth/index.js';
+import fileRoutes from './routes/files.js';
 import { connectionManager } from './bridge/connection-manager.js';
 import { verifyToken } from './auth/jwt.js';
 import { db, users } from './db/index.js';
 import { eq } from 'drizzle-orm';
+import { versionInfo, getVersionDetails, getVersionString, versionFooterCss } from './version.js';
 
 // Type declarations for Hono context variables
 declare module 'hono' {
@@ -41,10 +43,16 @@ app.get('/health', (c) => {
   const stats = connectionManager.getStats();
   return c.json({
     status: 'ok',
-    version: '1.0.0',
+    version: versionInfo.version,
+    commit: versionInfo.commit,
     connections: stats.totalConnections,
-    mode: process.env.NODE_ENV || 'development',
+    mode: versionInfo.environment,
   });
+});
+
+// Version endpoint - detailed version information
+app.get('/version', (c) => {
+  return c.json(getVersionDetails());
 });
 
 // Development mode endpoints (only available when NODE_ENV !== 'production')
@@ -216,6 +224,9 @@ app.route('/auth', authRoutes);
 
 // API routes (requires auth)
 app.route('/api', apiRoutes);
+
+// File download routes (for unmasked file downloads)
+app.route('/files', fileRoutes);
 
 // MCP routes
 app.route('/mcp', mcpRoutes);
@@ -612,6 +623,24 @@ const landingPageHtml = `
       border-top: 1px solid var(--border);
       margin-top: 4rem;
     }
+    footer .version-info {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    }
+    footer .version-info .version {
+      color: #10b981;
+    }
+    footer .version-info .separator {
+      color: var(--text-secondary);
+    }
+    footer .version-info .commit {
+      color: #8b5cf6;
+      cursor: help;
+    }
   </style>
 </head>
 <body>
@@ -717,6 +746,11 @@ const landingPageHtml = `
     
     <footer>
       <p>Moodle MCP · Built for educators, by educators.</p>
+      <div class="version-info">
+        <span class="version">v${versionInfo.version}</span>
+        <span class="separator">·</span>
+        <span class="commit" title="Commit: ${versionInfo.commitFull}">${versionInfo.commit}</span>
+      </div>
     </footer>
   </div>
 </body>
@@ -972,6 +1006,15 @@ const dashboardPageHtml = `
         <button class="btn btn-secondary" onclick="copyConfig()">📋 Copy Configuration</button>
       </div>
     </div>
+    
+    <footer style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); text-align: center;">
+      <p style="color: var(--text-secondary); font-size: 0.85rem;">Moodle MCP · Built for educators, by educators.</p>
+      <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
+        <span style="color: #10b981;">v${versionInfo.version}</span>
+        <span style="color: var(--text-secondary);">·</span>
+        <span style="color: #8b5cf6;" title="Commit: ${versionInfo.commitFull}">${versionInfo.commit}</span>
+      </div>
+    </footer>
   </div>
   
   <script>

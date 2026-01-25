@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 /**
@@ -24,7 +24,7 @@ export const piiRosters = sqliteTable('pii_rosters', {
   // PII fields
   displayName: text('display_name').notNull(),
   studentId: text('student_id'), // C######## - nullable for non-students
-  email: text('email').notNull(),
+  email: text('email'), // May not be available from all tools
   
   // Role in course (student, editingteacher, teacher, etc.)
   role: text('role').default('student'),
@@ -40,8 +40,8 @@ export const piiRosters = sqliteTable('pii_rosters', {
     table.courseId,
     table.moodleUserId
   ),
-  // Index for efficient lookups by course
-  courseIdx: uniqueIndex('roster_course_idx').on(table.ownerUserId, table.courseId),
+  // Index for efficient lookups by course (NOT unique - many entries per course)
+  courseIdx: index('roster_course_idx').on(table.ownerUserId, table.courseId),
 }));
 
 // Type for roster entries

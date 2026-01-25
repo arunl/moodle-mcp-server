@@ -1,5 +1,5 @@
 // Popup script for Moodle MCP Bridge
-import { SERVER_URL } from './config.js';
+import { SERVERS, DEFAULT_SERVER, getSelectedServer, setSelectedServer, getServerUrl } from './config.js';
 
 // DOM elements
 const loadingEl = document.getElementById('loading');
@@ -18,15 +18,108 @@ const userEmail = document.getElementById('user-email');
 const serverStatus = document.getElementById('server-status');
 const wsStatus = document.getElementById('ws-status');
 
-// Hide Dev Login button unless connecting to localhost
-const isLocalDev = SERVER_URL.includes('localhost') || SERVER_URL.includes('127.0.0.1');
-if (!isLocalDev) {
-  devLoginBtn.style.display = 'none';
+const serverSelect = document.getElementById('server-select');
+const serverIndicator = document.getElementById('server-indicator');
+const serverNameEl = document.getElementById('server-name');
+
+// Current server URL (will be set asynchronously)
+let currentServerUrl = null;
+
+// Initialize server selector
+async function initServerSelector() {
+  // Populate dropdown
+  const result = await chrome.storage.local.get(['selectedServer']);
+  const selectedKey = result.selectedServer || DEFAULT_SERVER;
+  
+  serverSelect.innerHTML = '';
+  for (const [key, server] of Object.entries(SERVERS)) {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = server.name;
+    if (key === selectedKey) {
+      option.selected = true;
+    }
+    serverSelect.appendChild(option);
+  }
+  
+  // Update login buttons based on server capabilities
+  await updateLoginButtons(selectedKey);
+  
+  // Set current server URL
+  currentServerUrl = SERVERS[selectedKey].url;
+  
+  return selectedKey;
 }
+
+// Update login buttons based on selected server and its capabilities
+async function updateLoginButtons(serverKey) {
+  const isLocalDev = serverKey === 'localhost';
+  const serverUrl = SERVERS[serverKey].url;
+  
+  // Always show dev login for localhost
+  devLoginBtn.style.display = isLocalDev ? 'block' : 'none';
+  
+  // Check if Google OAuth is configured on this server
+  try {
+    const response = await fetch(`${serverUrl}/auth/status`, { 
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (response.ok) {
+      const status = await response.json();
+      
+      // Disable Google login if OAuth not configured
+      if (status.googleOAuthConfigured === false) {
+        loginBtn.disabled = true;
+        loginBtn.title = 'Google OAuth not configured on this server';
+        loginBtn.style.opacity = '0.5';
+        loginBtn.style.cursor = 'not-allowed';
+      } else {
+        loginBtn.disabled = false;
+        loginBtn.title = '';
+        loginBtn.style.opacity = '1';
+        loginBtn.style.cursor = 'pointer';
+      }
+    }
+  } catch (error) {
+    // Server might not be running - show both buttons but don't disable
+    console.log('Could not check server status:', error.message);
+    loginBtn.disabled = false;
+    loginBtn.title = '';
+    loginBtn.style.opacity = '1';
+    loginBtn.style.cursor = 'pointer';
+  }
+}
+
+// Update server indicator in logged-in view
+function updateServerIndicator(serverKey) {
+  const server = SERVERS[serverKey];
+  if (server) {
+    serverNameEl.textContent = server.name;
+    if (serverKey === 'localhost') {
+      serverIndicator.classList.add('localhost');
+    } else {
+      serverIndicator.classList.remove('localhost');
+    }
+  }
+}
+
+// Handle server selection change
+serverSelect.addEventListener('change', async () => {
+  const selectedKey = serverSelect.value;
+  await setSelectedServer(selectedKey);
+  await updateLoginButtons(selectedKey);
+  currentServerUrl = SERVERS[selectedKey].url;
+  
+  // Notify background script to reconnect with new server
+  await chrome.runtime.sendMessage({ action: 'serverChanged', serverKey: selectedKey });
+});
 
 // Load current status
 async function loadStatus() {
   try {
+    const selectedKey = await initServerSelector();
     const response = await chrome.runtime.sendMessage({ action: 'getStatus' });
     
     loadingEl.classList.add('hidden');
@@ -46,6 +139,9 @@ async function loadStatus() {
       // Set status
       updateStatus(serverStatus, true, 'Connected');
       updateStatus(wsStatus, response.wsConnected, response.wsConnected ? 'Connected' : 'Disconnected');
+      
+      // Update server indicator
+      updateServerIndicator(selectedKey);
     } else {
       // Show logged out state
       loggedOutEl.classList.remove('hidden');
@@ -73,7 +169,7 @@ loginBtn.addEventListener('click', () => {
 devLoginBtn.addEventListener('click', async () => {
   try {
     // Call dev login endpoint
-    const response = await fetch(`${SERVER_URL}/dev/login`, { method: 'POST' });
+    const response = await fetch(`${currentServerUrl}/dev/login`, { method: 'POST' });
     const data = await response.json();
     
     if (data.accessToken) {
@@ -88,7 +184,7 @@ devLoginBtn.addEventListener('click', async () => {
       alert('Dev login failed: ' + (data.error || 'Unknown error'));
     }
   } catch (error) {
-    alert('Dev login failed: ' + error.message + '\\nMake sure the server is running at ' + SERVER_URL);
+    alert('Dev login failed: ' + error.message + '\nMake sure the server is running at ' + currentServerUrl);
   }
 });
 
@@ -102,8 +198,8 @@ reconnectBtn.addEventListener('click', async () => {
   setTimeout(loadStatus, 1000);
 });
 
-dashboardBtn.addEventListener('click', () => {
-  chrome.tabs.create({ url: `${SERVER_URL}/dashboard` });
+dashboardBtn.addEventListener('click', async () => {
+  chrome.tabs.create({ url: `${currentServerUrl}/dashboard` });
   window.close();
 });
 

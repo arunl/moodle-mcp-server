@@ -8,7 +8,7 @@ import { eq, and } from 'drizzle-orm';
 export interface MoodleParticipant {
   id: number;           // Moodle user ID
   name: string;         // Display name
-  email: string;
+  email?: string;       // May not be available from all tools
   roles?: string[];     // e.g., ['Student', 'Non-editing teacher']
   lastAccess?: string;
   studentId?: string;   // C######## if available
@@ -26,6 +26,11 @@ export async function syncRoster(
   const now = new Date();
   
   for (const participant of participants) {
+    // Skip participants without required fields (email is optional)
+    if (!participant.id || !participant.name) {
+      console.warn(`Skipping participant with missing id or name:`, participant);
+      continue;
+    }
     // Determine role (use first role or default to 'student')
     const role = participant.roles?.[0]?.toLowerCase() || 'student';
     
@@ -39,12 +44,18 @@ export async function syncRoster(
       }
     }
     
+    // Construct email from student ID if not provided (common pattern: c00123456@louisiana.edu)
+    let email = participant.email;
+    if (!email && studentId) {
+      email = `${studentId.toLowerCase()}@louisiana.edu`;
+    }
+    
     const entry: NewPiiRosterEntry = {
       ownerUserId,
       courseId,
       moodleUserId: participant.id,
       displayName: participant.name,
-      email: participant.email,
+      email: email || null,
       studentId: studentId || null,
       role,
       updatedAt: now,
@@ -150,7 +161,9 @@ export function buildRosterLookup(roster: PiiRosterEntry[]): {
   
   for (const entry of roster) {
     byName.set(entry.displayName.toLowerCase(), entry);
-    byEmail.set(entry.email.toLowerCase(), entry);
+    if (entry.email) {
+      byEmail.set(entry.email.toLowerCase(), entry);
+    }
     if (entry.studentId) {
       byStudentId.set(entry.studentId.toUpperCase(), entry);
     }

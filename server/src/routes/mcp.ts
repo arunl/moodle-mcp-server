@@ -264,6 +264,8 @@ async function handleToolCall(
   const { name, arguments: rawArgs = {} } = params;
 
   // Check browser connection
+  console.log(`[MCP] Tool call from userId: ${userId}, checking connection...`);
+  console.log(`[MCP] isUserConnected: ${connectionManager.isUserConnected(userId)}`);
   if (!connectionManager.isUserConnected(userId) && name !== 'get_browser_status') {
     return {
       jsonrpc: '2.0',
@@ -1499,12 +1501,15 @@ async function handleToolCall(
     // Update roster if this tool returns participant data
     if (shouldUpdateRoster(name) && result) {
       const participants = extractParticipantsFromResult(name, result);
+      console.log(`[PII] Tool ${name}: extracted ${participants?.length ?? 0} participants for roster`);
       if (participants && participants.length > 0 && courseId) {
+        console.log(`[PII] Updating roster for course ${courseId} with ${participants.length} participants`);
         await updateRoster(userId, courseId, participants);
       }
     }
 
     // Mask PII in result before sending to LLM
+    console.log(`[PII] Masking result for userId=${userId}, courseId=${courseId}`);
     const maskedResult = await maskResult(userId, result, courseId);
 
     return {

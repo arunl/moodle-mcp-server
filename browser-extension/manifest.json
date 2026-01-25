@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Moodle MCP Bridge",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Connect your Moodle session to AI assistants via the Moodle MCP hosted service",
   "permissions": [
     "storage",
@@ -11,6 +11,7 @@
     "tabs"
   ],
   "host_permissions": [
+    "http://localhost:3000/*",
     "http://localhost:8080/*",
     "https://moodle-mcp-server.fly.dev/*",
     "*://*.moodle.org/*",

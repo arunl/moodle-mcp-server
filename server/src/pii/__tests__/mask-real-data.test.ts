@@ -128,6 +128,10 @@ test('Mask real student ID (username)', () => {
 });
 
 test('Mask real student email', () => {
+  if (!sampleStudent.email) {
+    console.log('Skipping email test - no email in sample student');
+    return;
+  }
   const input = `Contact: ${sampleStudent.email}`;
   const result = maskPII(input, roster);
   assertContains(result, `M${sampleStudent.moodleUserId}:email`);
@@ -243,7 +247,9 @@ Team Assignments:
   const unmasked = unmaskPII(llmResponse, roster);
   
   assertContains(unmasked, sampleStudent.displayName);
-  assertContains(unmasked, sampleStudent.email);
+  if (sampleStudent.email) {
+    assertContains(unmasked, sampleStudent.email);
+  }
   if (sampleStudent.studentId) {
     assertContains(unmasked, sampleStudent.studentId);
   }

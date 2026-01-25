@@ -81,7 +81,9 @@ export class ConnectionManager {
   // Check if a user has an active browser connection
   isUserConnected(userId: string): boolean {
     const connection = this.connections.get(userId);
-    return connection !== undefined && connection.ws.readyState === WebSocket.OPEN;
+    const connected = connection !== undefined && connection.ws.readyState === WebSocket.OPEN;
+    console.log(`[ConnectionManager] isUserConnected(${userId}): ${connected}, connections: [${Array.from(this.connections.keys()).join(', ')}]`);
+    return connected;
   }
 
   // Update connection metadata

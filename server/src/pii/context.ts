@@ -93,10 +93,12 @@ export async function maskResult(
   
   if (!courseId) {
     // No course context - apply one-way masking only (no roster lookup)
+    console.log(`[PII] maskResult: no courseId, applying one-way masking only`);
     return maskStructuredData(result, []);
   }
   
   const roster = await getCachedRoster(userId, courseId);
+  console.log(`[PII] maskResult: courseId=${courseId}, roster size=${roster.length}`);
   return maskStructuredData(result, roster);
 }
 
@@ -176,14 +178,15 @@ export function extractParticipantsFromResult(
     case 'list_participants':
     case 'get_enrolled_users':
       // Result has { participants: [...] }
+      // Fields: name, userId (moodle ID), username (student ID like C00509352), role
       const participants = data.participants;
       if (Array.isArray(participants)) {
         return participants.map((p: Record<string, unknown>) => ({
-          id: p.id as number,
+          id: (p.userId ?? p.id) as number, // userId is the Moodle ID
           name: p.name as string,
-          email: p.email as string,
-          roles: p.roles as string[] | undefined,
-          studentId: p.studentId as string | undefined,
+          email: p.email as string | undefined,
+          roles: p.role ? [p.role as string] : (p.roles as string[] | undefined),
+          studentId: (p.username ?? p.studentId) as string | undefined, // username is C00XXXXXX
         }));
       }
       break;

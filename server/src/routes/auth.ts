@@ -8,6 +8,18 @@ import { generateState, generateCodeVerifier } from 'arctic';
 
 const auth = new Hono();
 
+// Check server auth configuration status
+auth.get('/status', async (c) => {
+  const googleClientId = process.env.GOOGLE_CLIENT_ID;
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const devMode = process.env.NODE_ENV === 'development';
+  
+  return c.json({
+    googleOAuthConfigured: !!(googleClientId && googleClientSecret),
+    devLoginAvailable: devMode,
+  });
+});
+
 // Initiate Google OAuth flow
 auth.get('/google', async (c) => {
   const state = generateState();

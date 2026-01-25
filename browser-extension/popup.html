@@ -195,6 +195,49 @@
       margin-left: auto;
     }
     
+    .server-selector {
+      margin-bottom: 1rem;
+    }
+    
+    .server-selector label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.25rem;
+    }
+    
+    .server-selector select {
+      width: 100%;
+      padding: 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    
+    .server-selector select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    
+    .server-indicator {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-top: 0.5rem;
+      padding: 0.25rem 0.5rem;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    
+    .server-indicator.localhost {
+      color: #f59e0b;
+    }
+    
     .footer {
       margin-top: 1.5rem;
       padding-top: 1rem;
@@ -209,7 +252,7 @@
   <div class="header">
     <span class="logo">🎓</span>
     <h1>Moodle MCP</h1>
-    <span class="version" id="version">v2.3.0</span>
+    <span class="version" id="version">v2.4.0</span>
   </div>
   
   <div id="loading">Loading...</div>
@@ -222,12 +265,19 @@
       </p>
     </div>
     
+    <div class="server-selector">
+      <label for="server-select">Server</label>
+      <select id="server-select">
+        <!-- Populated by JavaScript -->
+      </select>
+    </div>
+    
     <button class="btn btn-primary" id="login-btn">
       Sign in with Google
     </button>
     
-    <button class="btn btn-secondary" id="dev-login-btn">
-      🔧 Dev Login (localhost only)
+    <button class="btn btn-secondary" id="dev-login-btn" style="display: none;">
+      🔧 Dev Login
     </button>
     
     <div class="instructions">
@@ -276,6 +326,11 @@
     <button class="btn btn-danger" id="logout-btn">
       Sign Out
     </button>
+    
+    <div class="server-indicator" id="server-indicator">
+      <span>📡</span>
+      <span id="server-name">Production</span>
+    </div>
     
     <div class="instructions">
       <strong>Ready to use!</strong>

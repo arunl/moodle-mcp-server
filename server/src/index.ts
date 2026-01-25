@@ -55,28 +55,34 @@ app.get('/version', (c) => {
   return c.json(getVersionDetails());
 });
 
-// Development mode endpoints (only available when NODE_ENV !== 'production')
-if (process.env.NODE_ENV !== 'production') {
+// Development mode endpoints (only available when NODE_ENV === 'development')
+if (process.env.NODE_ENV === 'development') {
   const { createAccessToken, generateApiKey, hashApiKey } = await import('./auth/jwt.js');
   const { db, users, apiKeys } = await import('./db/index.js');
   const { eq } = await import('drizzle-orm');
 
   // Dev page - simple UI for testing
   app.get('/dev', (c) => {
+    const port = process.env.PORT || '3000';
     return c.html(`
 <!DOCTYPE html>
 <html>
 <head>
   <title>Dev Mode - MCP Connector</title>
   <style>
-    body { font-family: system-ui; background: #0a0a0f; color: #f0f0f5; padding: 2rem; max-width: 600px; margin: 0 auto; }
+    body { font-family: system-ui; background: #0a0a0f; color: #f0f0f5; padding: 2rem; max-width: 700px; margin: 0 auto; }
     h1 { color: #ff6b35; }
     .card { background: #1a1a24; padding: 1.5rem; border-radius: 12px; margin: 1rem 0; }
     button { background: linear-gradient(135deg, #ff6b35, #ff8c5a); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 1rem; margin: 0.5rem 0.5rem 0.5rem 0; }
     button:hover { transform: translateY(-2px); }
-    pre { background: #12121a; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
+    button.copy-btn { background: #2a2a3a; padding: 0.5rem 1rem; font-size: 0.85rem; }
+    button.copy-btn:hover { background: #3a3a4a; }
+    button.copy-btn.copied { background: #10b981; }
+    pre { background: #12121a; padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; position: relative; }
     .success { color: #10b981; }
     .label { color: #a0a0b0; font-size: 0.875rem; margin-bottom: 0.5rem; }
+    .copyable { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }
+    .copyable code { background: #12121a; padding: 0.5rem 1rem; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; flex: 1; word-break: break-all; border: 1px solid #2a2a3a; }
     #result { margin-top: 1rem; }
   </style>
 </head>
@@ -98,25 +104,37 @@ if (process.env.NODE_ENV !== 'production') {
   
   <div class="card">
     <h3>Step 3: Use in MCP Config</h3>
-    <p class="label">Add this to your Cursor MCP config:</p>
+    <p class="label">Add to <code>.cursor/mcp.json</code> in your project:</p>
     <pre id="config-template">{
   "mcpServers": {
-    "moodle": {
-      "transport": {
-        "type": "sse",
-        "url": "http://localhost:8080/mcp/sse"
-      },
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY"
+    "moodle-local": {
+      "command": "npx",
+      "args": ["tsx", "path/to/mcp-remote/src/index.ts"],
+      "env": {
+        "MCP_SERVER_URL": "http://localhost:${port}",
+        "MCP_API_KEY": "YOUR_API_KEY"
       }
     }
   }
 }</pre>
+    <button class="copy-btn" onclick="copyConfig()">📋 Copy Config</button>
   </div>
 
   <script>
     let currentToken = '';
     let currentApiKey = '';
+    
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const original = btn.textContent;
+        btn.textContent = '✅ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = original;
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
     
     async function devLogin() {
       const res = await fetch('/dev/login', { method: 'POST' });
@@ -125,7 +143,9 @@ if (process.env.NODE_ENV !== 'production') {
       document.getElementById('login-result').innerHTML = 
         '<p class="success">✅ ' + data.message + '</p>' +
         '<p class="label">User: ' + data.user.email + '</p>' +
-        '<p class="label">Token (for extension):</p><pre style="word-break:break-all">' + data.accessToken + '</pre>';
+        '<p class="label">Token (for browser extension):</p>' +
+        '<div class="copyable"><code id="token-value">' + data.accessToken + '</code>' +
+        '<button class="copy-btn" onclick="copyToClipboard(currentToken, this)">📋 Copy</button></div>';
     }
     
     async function getApiKey() {
@@ -138,17 +158,33 @@ if (process.env.NODE_ENV !== 'production') {
       currentApiKey = data.apiKey;
       document.getElementById('key-result').innerHTML = 
         '<p class="success">✅ ' + data.message + '</p>' +
-        '<p class="label">API Key (save this!):</p><pre>' + data.apiKey + '</pre>';
+        '<p class="label">API Key (for MCP config):</p>' +
+        '<div class="copyable"><code id="key-value">' + data.apiKey + '</code>' +
+        '<button class="copy-btn" onclick="copyToClipboard(currentApiKey, this)">📋 Copy</button></div>';
       
-      // Update config template
-      document.getElementById('config-template').textContent = JSON.stringify({
+      // Update config template with the actual key
+      updateConfigTemplate();
+    }
+    
+    function updateConfigTemplate() {
+      const config = {
         mcpServers: {
-          moodle: {
-            transport: { type: "sse", url: "http://localhost:8080/mcp/sse" },
-            headers: { Authorization: "Bearer " + data.apiKey }
+          "moodle-local": {
+            command: "npx",
+            args: ["tsx", "path/to/mcp-remote/src/index.ts"],
+            env: {
+              MCP_SERVER_URL: "http://localhost:${port}",
+              MCP_API_KEY: currentApiKey || "YOUR_API_KEY"
+            }
           }
         }
-      }, null, 2);
+      };
+      document.getElementById('config-template').textContent = JSON.stringify(config, null, 2);
+    }
+    
+    function copyConfig() {
+      const configText = document.getElementById('config-template').textContent;
+      copyToClipboard(configText, event.target);
     }
   </script>
 </body>
@@ -291,6 +327,10 @@ app.get(
   })
 );
 
+// Check environment configuration
+const isDevMode = process.env.NODE_ENV === 'development';
+const hasGoogleOAuth = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+
 // Landing page HTML
 app.get('/', (c) => {
   const accessToken = getCookie(c, 'access_token');
@@ -298,7 +338,35 @@ app.get('/', (c) => {
   if (accessToken) {
     return c.redirect('/dashboard');
   }
-  return c.html(landingPageHtml);
+  
+  // Generate dynamic buttons based on configuration
+  const navButtons = [];
+  const heroButtons = [];
+  
+  if (hasGoogleOAuth) {
+    navButtons.push('<a href="/auth/google" class="btn btn-primary">Sign in with Google</a>');
+    heroButtons.push('<a href="/auth/google" class="btn btn-primary">Get Started Free</a>');
+  } else {
+    navButtons.push('<span class="btn btn-primary" style="opacity:0.5;cursor:not-allowed;" title="Google OAuth not configured">Sign in with Google</span>');
+  }
+  
+  if (isDevMode) {
+    navButtons.push('<a href="/dev" class="btn btn-secondary">🔧 Dev Login</a>');
+    heroButtons.push('<a href="/dev" class="btn btn-secondary">🔧 Dev Login</a>');
+  }
+  
+  if (heroButtons.length === 0) {
+    heroButtons.push('<span class="btn btn-primary" style="opacity:0.5;cursor:not-allowed;">No login methods configured</span>');
+  }
+  
+  heroButtons.push('<a href="#how-it-works" class="btn btn-secondary">Learn More</a>');
+  
+  // Inject buttons into template
+  const pageHtml = landingPageHtml
+    .replace('<!-- NAV_BUTTONS -->', navButtons.join('\n        '))
+    .replace('<!-- HERO_BUTTONS -->', heroButtons.join('\n        '));
+  
+  return c.html(pageHtml);
 });
 
 // Dashboard page
@@ -654,8 +722,8 @@ const landingPageHtml = `
       <nav class="nav-links">
         <a href="#features">Features</a>
         <a href="#how-it-works">How it Works</a>
-        <a href="#how-it-works">Documentation</a>
-        <a href="/auth/google" class="btn btn-primary">Sign in with Google</a>
+        <a href="/docs">Documentation</a>
+        <!-- NAV_BUTTONS -->
       </nav>
     </header>
     
@@ -663,8 +731,7 @@ const landingPageHtml = `
       <h1>Use AI to <span>Navigate Moodle</span></h1>
       <p>Connect Claude, ChatGPT, Cursor, or any AI assistant to your Moodle courses. Create content, manage assignments, and interact with your LMS using natural language.</p>
       <div class="hero-buttons">
-        <a href="/auth/google" class="btn btn-primary">Get Started Free</a>
-        <a href="#how-it-works" class="btn btn-secondary">Learn More</a>
+        <!-- HERO_BUTTONS -->
       </div>
     </section>
     

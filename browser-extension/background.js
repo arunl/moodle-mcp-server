@@ -1,15 +1,28 @@
 // Background service worker for Moodle MCP Bridge (Hosted Version)
-// VERSION 2.3.0 - Using ISOLATED world to bypass page CSP for evaluate
-import { SERVER_URL, WS_URL } from './config.js';
+// VERSION 2.4.0 - Multi-server support
+import { SERVERS, DEFAULT_SERVER, getServerUrl, getWsUrl } from './config.js';
 
-console.log('[MoodleMCP v2.3.0] Background script loaded');
-console.log('[MoodleMCP] Server URL:', SERVER_URL);
-console.log('[MoodleMCP] WebSocket URL:', WS_URL);
+console.log('[MoodleMCP v2.4.0] Background script loaded');
 
 let ws = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 5000;
+
+// Current server URLs (updated when server changes)
+let currentServerUrl = null;
+let currentWsUrl = null;
+
+// Initialize server URLs
+async function initServerUrls() {
+  currentServerUrl = await getServerUrl();
+  currentWsUrl = await getWsUrl();
+  console.log('[MoodleMCP] Server URL:', currentServerUrl);
+  console.log('[MoodleMCP] WebSocket URL:', currentWsUrl);
+}
+
+// Initialize on load
+initServerUrls();
 
 // Get stored auth tokens
 async function getTokens() {
@@ -34,8 +47,13 @@ async function refreshAccessToken() {
   const { refreshToken } = await getTokens();
   if (!refreshToken) return null;
 
+  // Ensure we have the current server URL
+  if (!currentServerUrl) {
+    await initServerUrls();
+  }
+
   try {
-    const response = await fetch(`${SERVER_URL}/auth/token`, {
+    const response = await fetch(`${currentServerUrl}/auth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -74,10 +92,15 @@ async function connectWebSocket() {
     return;
   }
 
-  console.log('[WebSocket] Connecting to', WS_URL);
+  // Ensure we have the current server URLs
+  if (!currentWsUrl) {
+    await initServerUrls();
+  }
+
+  console.log('[WebSocket] Connecting to', currentWsUrl);
   
   try {
-    ws = new WebSocket(WS_URL);
+    ws = new WebSocket(currentWsUrl);
 
     ws.onopen = () => {
       console.log('[WebSocket] Connected, authenticating...');
@@ -2069,66 +2092,86 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.action === 'serverChanged') {
+    // Server changed - reinitialize URLs and reconnect
+    console.log('[MoodleMCP] Server changed to:', message.serverKey);
+    initServerUrls().then(() => {
+      // Close existing connection if any
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      reconnectAttempts = 0;
+      // Reconnect with new server
+      connectWebSocket();
+    });
+    sendResponse({ success: true });
+    return true;
+  }
+  
   if (message.action === 'login') {
-    // Open login popup and poll for auth completion
-    chrome.windows.create({
-      url: `${SERVER_URL}/auth/google?extension=true`,
-      type: 'popup',
-      width: 500,
-      height: 600,
-    }, async (popupWindow) => {
-      let authCompleted = false;
-      
-      // Function to check auth and connect
-      const tryAuth = async () => {
-        if (authCompleted) return false;
-        try {
-          const response = await fetch(`${SERVER_URL}/auth/extension-check`, {
-            credentials: 'include'
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (data.accessToken) {
-              authCompleted = true;
-              await saveTokens(data.accessToken, data.refreshToken, data.user);
-              connectWebSocket();
-              console.log('[MoodleMCP] Auth successful via extension-check');
-              return true;
-            }
-          }
-        } catch (e) {
-          console.log('[MoodleMCP] Auth check error:', e);
-        }
-        return false;
-      };
-      
-      // Poll for auth completion - check both window state AND auth endpoint
-      const checkAuth = setInterval(async () => {
-        // Always try to get auth (in case OAuth completed but window still open)
-        const success = await tryAuth();
-        if (success) {
-          clearInterval(checkAuth);
-          // Try to close the popup window
-          try {
-            chrome.windows.remove(popupWindow.id);
-          } catch (e) {}
-          return;
-        }
+    // Ensure we have current server URL
+    initServerUrls().then(() => {
+      // Open login popup and poll for auth completion
+      chrome.windows.create({
+        url: `${currentServerUrl}/auth/google?extension=true`,
+        type: 'popup',
+        width: 500,
+        height: 600,
+      }, async (popupWindow) => {
+        let authCompleted = false;
         
-        // Also check if window was closed
-        chrome.windows.get(popupWindow.id, (w) => {
-          // Check for lastError first to suppress "No window" console error
-          const err = chrome.runtime.lastError;
-          if (err || !w) {
-            // Window closed, do one final auth check
-            clearInterval(checkAuth);
-            tryAuth();
+        // Function to check auth and connect
+        const tryAuth = async () => {
+          if (authCompleted) return false;
+          try {
+            const response = await fetch(`${currentServerUrl}/auth/extension-check`, {
+              credentials: 'include'
+            });
+            if (response.ok) {
+              const data = await response.json();
+              if (data.accessToken) {
+                authCompleted = true;
+                await saveTokens(data.accessToken, data.refreshToken, data.user);
+                connectWebSocket();
+                console.log('[MoodleMCP] Auth successful via extension-check');
+                return true;
+              }
+            }
+          } catch (e) {
+            console.log('[MoodleMCP] Auth check error:', e);
           }
-        });
-      }, 500); // Check every 500ms
-      
-      // Stop polling after 5 minutes
-      setTimeout(() => clearInterval(checkAuth), 5 * 60 * 1000);
+          return false;
+        };
+        
+        // Poll for auth completion - check both window state AND auth endpoint
+        const checkAuth = setInterval(async () => {
+          // Always try to get auth (in case OAuth completed but window still open)
+          const success = await tryAuth();
+          if (success) {
+            clearInterval(checkAuth);
+            // Try to close the popup window
+            try {
+              chrome.windows.remove(popupWindow.id);
+            } catch (e) {}
+            return;
+          }
+          
+          // Also check if window was closed
+          chrome.windows.get(popupWindow.id, (w) => {
+            // Check for lastError first to suppress "No window" console error
+            const err = chrome.runtime.lastError;
+            if (err || !w) {
+              // Window closed, do one final auth check
+              clearInterval(checkAuth);
+              tryAuth();
+            }
+          });
+        }, 500); // Check every 500ms
+        
+        // Stop polling after 5 minutes
+        setTimeout(() => clearInterval(checkAuth), 5 * 60 * 1000);
+      });
     });
     sendResponse({ success: true });
     return true;

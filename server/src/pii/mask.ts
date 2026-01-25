@@ -61,6 +61,53 @@ function maskEmailOneWay(email: string): string {
 }
 
 /**
+ * Parse a display name into first and last name parts
+ * Handles: "First Last", "First Middle Last", etc.
+ */
+function parseNameParts(displayName: string): { first: string; last: string; middle?: string } | null {
+  const parts = displayName.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  
+  return {
+    first: parts[0],
+    last: parts[parts.length - 1],
+    middle: parts.length > 2 ? parts.slice(1, -1).join(' ') : undefined
+  };
+}
+
+/**
+ * Generate name patterns for different formats
+ * Returns patterns sorted by length (longest first)
+ */
+function generateNamePatterns(entry: PiiRosterEntry): string[] {
+  const patterns: string[] = [];
+  const displayName = entry.displayName;
+  
+  // Always include the original display name
+  patterns.push(escapeRegex(displayName));
+  
+  // Parse into parts to generate variations
+  const parts = parseNameParts(displayName);
+  if (parts) {
+    const { first, last, middle } = parts;
+    
+    // "Last, First" format
+    patterns.push(escapeRegex(`${last}, ${first}`));
+    
+    // "Last, First Middle" format (if middle name exists)
+    if (middle) {
+      patterns.push(escapeRegex(`${last}, ${first} ${middle}`));
+    }
+    
+    // "Last First" format (no comma, sometimes used)
+    patterns.push(escapeRegex(`${last} ${first}`));
+  }
+  
+  // Sort by length descending (match longer patterns first)
+  return patterns.sort((a, b) => b.length - a.length);
+}
+
+/**
  * Mask PII in text before sending to LLM (egress)
  * 
  * Strategy:
@@ -87,21 +134,26 @@ export function maskPII(text: string, roster: PiiRosterEntry[]): string {
   
   // IMPORTANT: Order matters! Replace longer/more specific patterns first:
   // 1. Emails (longest, may contain student IDs as substrings)
-  // 2. Names (medium length)
+  // 2. Names (medium length, multiple format variations)
   // 3. Student IDs (shortest, may be substrings of emails)
   
   // 1. Replace KNOWN emails with reversible tokens FIRST
   // (emails like c00509352@louisiana.edu contain the student ID)
   for (const entry of roster) {
-    const emailPattern = new RegExp(escapeRegex(entry.email), 'gi');
-    masked = masked.replace(emailPattern, `M${entry.moodleUserId}:email`);
+    if (entry.email) {
+      const emailPattern = new RegExp(escapeRegex(entry.email), 'gi');
+      masked = masked.replace(emailPattern, `M${entry.moodleUserId}:email`);
+    }
   }
   
-  // 2. Replace KNOWN names with reversible tokens
+  // 2. Replace KNOWN names with reversible tokens (multiple formats)
+  // Handle: "First Last", "Last, First", "Last First"
   for (const entry of sortedByNameLength) {
-    // Case-insensitive replacement but preserve token format
-    const namePattern = new RegExp(escapeRegex(entry.displayName), 'gi');
-    masked = masked.replace(namePattern, `M${entry.moodleUserId}:name`);
+    const patterns = generateNamePatterns(entry);
+    for (const pattern of patterns) {
+      const nameRegex = new RegExp(pattern, 'gi');
+      masked = masked.replace(nameRegex, `M${entry.moodleUserId}:name`);
+    }
   }
   
   // 3. Replace KNOWN student IDs with reversible tokens LAST
@@ -186,7 +238,7 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
       case 'CID':
         return entry.studentId || match; // Return token if no student ID
       case 'email':
-        return entry.email;
+        return entry.email || match; // Return token if no email
       default:
         return match;
     }
@@ -224,6 +276,7 @@ function escapeRegex(str: string): string {
 
 /**
  * Mask structured data (objects/arrays) recursively
+ * Also masks object keys (e.g., when names are used as keys like in replierCounts)
  */
 export function maskStructuredData(data: unknown, roster: PiiRosterEntry[]): unknown {
   if (data === null || data === undefined) {
@@ -241,7 +294,9 @@ export function maskStructuredData(data: unknown, roster: PiiRosterEntry[]): unk
   if (typeof data === 'object') {
     const masked: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
-      masked[key] = maskStructuredData(value, roster);
+      // Mask both keys AND values - names can appear as object keys (e.g., replierCounts)
+      const maskedKey = maskPII(key, roster);
+      masked[maskedKey] = maskStructuredData(value, roster);
     }
     return masked;
   }
@@ -251,6 +306,7 @@ export function maskStructuredData(data: unknown, roster: PiiRosterEntry[]): unk
 
 /**
  * Unmask structured data (objects/arrays) recursively
+ * Also unmasks object keys (for consistency with maskStructuredData)
  */
 export function unmaskStructuredData(data: unknown, roster: PiiRosterEntry[]): unknown {
   if (data === null || data === undefined) {
@@ -268,7 +324,9 @@ export function unmaskStructuredData(data: unknown, roster: PiiRosterEntry[]): u
   if (typeof data === 'object') {
     const unmasked: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
-      unmasked[key] = unmaskStructuredData(value, roster);
+      // Unmask both keys AND values
+      const unmaskedKey = unmaskPII(key, roster);
+      unmasked[unmaskedKey] = unmaskStructuredData(value, roster);
     }
     return unmasked;
   }

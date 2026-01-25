@@ -1103,9 +1103,16 @@ const dashboardPageHtml = `
                 style="width:100%;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
             </div>
             <div>
-              <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">Course ID</label>
-              <input type="number" id="upload-course-id" placeholder="e.g., 56569" 
-                style="width:100%;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
+              <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">Course</label>
+              <div style="display:flex;gap:0.5rem;">
+                <select id="upload-course-select" 
+                  style="flex:1;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);">
+                  <option value="">-- Select a course --</option>
+                </select>
+                <input type="number" id="upload-course-id" placeholder="or enter ID" 
+                  style="width:120px;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
+              </div>
+              <span style="font-size:0.75rem;color:var(--text-secondary);">Select from roster or enter Moodle course ID</span>
             </div>
             <div style="display:flex;gap:0.5rem;">
               <button class="btn btn-primary" onclick="uploadFile()">Upload</button>
@@ -1166,8 +1173,9 @@ const dashboardPageHtml = `
         // Set up MCP config display
         showConfig('cursor'); // Default to Cursor
         
-        // Load files list
+        // Load files list and courses
         loadFiles();
+        loadCourses();
         
         // Show content
         document.getElementById('loading').classList.add('hidden');
@@ -1237,16 +1245,50 @@ const dashboardPageHtml = `
     }
     
     // File management functions
-    async function loadFiles() {
+    async function loadCourses() {
       try {
-        const res = await fetch('/files/list');
+        const res = await fetch('/files/courses');
         if (!res.ok) {
-          console.error('Failed to load files');
+          console.log('Could not load courses (may not have roster data yet)');
           return;
         }
         
         const data = await res.json();
-        const filesList = document.getElementById('files-list');
+        const select = document.getElementById('upload-course-select');
+        
+        // Keep the default option
+        select.innerHTML = '<option value="">-- Select a course --</option>';
+        
+        if (data.courses && data.courses.length > 0) {
+          data.courses.forEach(course => {
+            const option = document.createElement('option');
+            option.value = course.id;
+            option.textContent = 'Course ' + course.id;
+            select.appendChild(option);
+          });
+        }
+      } catch (error) {
+        console.log('Error loading courses:', error);
+      }
+    }
+    
+    async function loadFiles() {
+      const filesList = document.getElementById('files-list');
+      
+      try {
+        console.log('[loadFiles] Fetching /files/list...');
+        const res = await fetch('/files/list');
+        console.log('[loadFiles] Response status:', res.status);
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('[loadFiles] Failed to load files:', res.status, errorText);
+          filesList.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">Could not load files</p>';
+          return;
+        }
+        
+        const data = await res.json();
+        console.log('[loadFiles] Got data:', data);
         
         if (!data.files || data.files.length === 0) {
           filesList.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">No files available</p>';
@@ -1281,7 +1323,8 @@ const dashboardPageHtml = `
           \`;
         }).join('');
       } catch (error) {
-        console.error('Error loading files:', error);
+        console.error('[loadFiles] Error:', error);
+        filesList.innerHTML = '<p style="color: var(--danger); font-style: italic;">Error loading files</p>';
       }
     }
     
@@ -1304,15 +1347,21 @@ const dashboardPageHtml = `
       const form = document.getElementById('upload-form');
       form.style.display = form.style.display === 'none' ? 'block' : 'none';
       document.getElementById('upload-status').innerHTML = '';
+      // Load courses when opening the form
+      if (form.style.display !== 'none') {
+        loadCourses();
+      }
     }
     
     async function uploadFile() {
       const fileInput = document.getElementById('upload-file');
+      const courseSelect = document.getElementById('upload-course-select');
       const courseIdInput = document.getElementById('upload-course-id');
       const statusDiv = document.getElementById('upload-status');
       
       const file = fileInput.files[0];
-      const courseId = parseInt(courseIdInput.value, 10);
+      // Prefer select dropdown, fall back to manual input
+      const courseId = parseInt(courseSelect.value, 10) || parseInt(courseIdInput.value, 10);
       
       if (!file) {
         statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a file</span>';

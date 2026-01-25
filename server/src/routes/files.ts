@@ -19,7 +19,7 @@ import { db } from '../db/index.js';
 import { piiFiles } from '../pii/file-schema.js';
 import { piiRosters } from '../pii/schema.js';
 import { unmaskFile } from '../pii/files.js';
-import { eq, and, lt } from 'drizzle-orm';
+import { eq, and, lt, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 
 const files = new Hono();
@@ -165,6 +165,53 @@ files.post('/upload', async (c) => {
 });
 
 /**
+ * Get courses from the user's roster
+ * 
+ * GET /files/courses
+ * Requires cookie auth (from dashboard)
+ * 
+ * Returns distinct courses that the user has roster data for.
+ * NOTE: This route MUST be defined before /:id to avoid being caught by the wildcard
+ */
+files.get('/courses', async (c) => {
+  const { getCookie } = await import('hono/cookie');
+  const { verifyToken } = await import('../auth/jwt.js');
+  
+  const accessToken = getCookie(c, 'access_token');
+  if (!accessToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  try {
+    const payload = await verifyToken(accessToken);
+    if (!payload || !payload.sub) {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+    
+    const userId = payload.sub;
+    
+    // Get distinct course IDs from the roster
+    const courses = await db
+      .selectDistinct({
+        courseId: piiRosters.courseId,
+      })
+      .from(piiRosters)
+      .where(eq(piiRosters.ownerUserId, userId));
+    
+    return c.json({ 
+      courses: courses.map(c => ({ 
+        id: c.courseId,
+        // We don't have course names stored - the dashboard could fetch from Moodle
+        name: `Course ${c.courseId}` 
+      }))
+    });
+  } catch (error) {
+    console.error('Error listing courses:', error);
+    return c.json({ error: 'Failed to list courses' }, 500);
+  }
+});
+
+/**
  * List all files for the authenticated user
  * 
  * GET /files/list
@@ -179,6 +226,7 @@ files.get('/list', async (c) => {
   
   const accessToken = getCookie(c, 'access_token');
   if (!accessToken) {
+    console.log('[files/list] No access_token cookie found');
     return c.json({ error: 'Unauthorized' }, 401);
   }
   

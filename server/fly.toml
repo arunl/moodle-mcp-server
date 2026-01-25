@@ -7,12 +7,8 @@ app = 'moodle-mcp-server'
 primary_region = 'iad'
 
 [build]
-  # Build arguments for version info
-  # These are set automatically by GitHub Actions, or manually via:
-  # fly deploy --build-arg COMMIT_SHA=$(git rev-parse HEAD) --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  [build.args]
-    COMMIT_SHA = ""
-    BUILD_DATE = ""
+  # Version info is passed via --build-arg by GitHub Actions
+  # Manual deploys will show "dev" as commit (see version.ts defaults)
 
 [http_service]
   internal_port = 8080

@@ -1,10 +1,11 @@
 # Dockerfile for Fly.io deployment
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+# Build arguments for version info (passed from GitHub Actions or fly deploy)
+ARG COMMIT_SHA=unknown
+ARG BUILD_DATE
 
-# Install git for version detection
-RUN apk add --no-cache git
+WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package*.json ./
@@ -15,12 +16,10 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
 
-# Note: .git directory should be in build context for version detection
-# If deploying from GitHub Actions, the checkout action includes .git
-# If deploying manually, ensure you're in a git repo
-
-# Generate version.json with git commit info
-RUN node scripts/generate-version.js || echo '{"commit":"unknown","buildDate":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > version.json
+# Generate version.json from build args (set by CI/CD)
+# COMMIT_SHA and BUILD_DATE are passed from GitHub Actions or manual fly deploy
+RUN echo "{\"commit\":\"${COMMIT_SHA:0:7}\",\"commitFull\":\"${COMMIT_SHA}\",\"branch\":\"master\",\"buildDate\":\"${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}\"}" > version.json && \
+    cat version.json
 
 # Build TypeScript
 RUN npm run build

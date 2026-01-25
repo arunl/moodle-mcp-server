@@ -7,6 +7,16 @@ import { connectionManager, BrowserCommand } from '../bridge/connection-manager.
 import { moodleTools, generateCommandId } from '../mcp/tools.js';
 import { oauthAccessTokens } from '../oauth/schema.js';
 import { hashToken } from '../oauth/utils.js';
+import {
+  maskResult,
+  unmaskArgs,
+  updateRoster,
+  setCourseContext,
+  extractCourseId,
+  shouldUpdateRoster,
+  shouldUnmaskArgs,
+  extractParticipantsFromResult,
+} from '../pii/index.js';
 
 /**
  * IMPORTANT: Moodle Content Security Policy (CSP) Limitations
@@ -251,7 +261,7 @@ async function handleToolCall(
   params: { name: string; arguments?: Record<string, any> },
   userId: string
 ): Promise<any> {
-  const { name, arguments: args = {} } = params;
+  const { name, arguments: rawArgs = {} } = params;
 
   // Check browser connection
   if (!connectionManager.isUserConnected(userId) && name !== 'get_browser_status') {
@@ -279,6 +289,17 @@ async function handleToolCall(
   }
 
   try {
+    // Extract course ID from args and set context for PII masking
+    const courseId = extractCourseId(name, rawArgs);
+    if (courseId) {
+      setCourseContext(userId, courseId);
+    }
+
+    // Unmask args if this tool might contain LLM-generated content with mask tokens
+    const args = shouldUnmaskArgs(name) 
+      ? await unmaskArgs(userId, rawArgs, courseId)
+      : rawArgs;
+
     let result: any;
 
     switch (name) {
@@ -1421,6 +1442,17 @@ async function handleToolCall(
         };
     }
 
+    // Update roster if this tool returns participant data
+    if (shouldUpdateRoster(name) && result) {
+      const participants = extractParticipantsFromResult(name, result);
+      if (participants && participants.length > 0 && courseId) {
+        await updateRoster(userId, courseId, participants);
+      }
+    }
+
+    // Mask PII in result before sending to LLM
+    const maskedResult = await maskResult(userId, result, courseId);
+
     return {
       jsonrpc: '2.0',
       id,
@@ -1428,7 +1460,7 @@ async function handleToolCall(
         content: [
           {
             type: 'text',
-            text: JSON.stringify(result, null, 2),
+            text: JSON.stringify(maskedResult, null, 2),
           },
         ],
       },

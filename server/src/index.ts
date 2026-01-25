@@ -709,6 +709,9 @@ const landingPageHtml = `
       color: #8b5cf6;
       cursor: help;
     }
+    footer .version-info .build-date {
+      color: #6b7280;
+    }
   </style>
 </head>
 <body>
@@ -817,6 +820,7 @@ const landingPageHtml = `
         <span class="version">v${versionInfo.version}</span>
         <span class="separator">·</span>
         <span class="commit" title="Commit: ${versionInfo.commitFull}">${versionInfo.commit}</span>
+        ${versionInfo.buildDate ? `<span class="separator">·</span><span class="build-date" title="Build date">${new Date(versionInfo.buildDate).toLocaleDateString()}</span>` : ''}
       </div>
     </footer>
   </div>
@@ -1080,6 +1084,7 @@ const dashboardPageHtml = `
         <span style="color: #10b981;">v${versionInfo.version}</span>
         <span style="color: var(--text-secondary);">·</span>
         <span style="color: #8b5cf6;" title="Commit: ${versionInfo.commitFull}">${versionInfo.commit}</span>
+        ${versionInfo.buildDate ? `<span style="color: var(--text-secondary);">·</span><span style="color: #6b7280;" title="Build date">${new Date(versionInfo.buildDate).toLocaleDateString()}</span>` : ''}
       </div>
     </footer>
   </div>

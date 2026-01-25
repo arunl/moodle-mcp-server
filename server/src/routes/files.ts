@@ -245,6 +245,118 @@ files.get('/:id/status', async (c) => {
 });
 
 /**
+ * List all files for the authenticated user
+ * 
+ * GET /files/list
+ * Requires cookie auth (from dashboard)
+ */
+files.get('/list', async (c) => {
+  // Get userId from cookie-based auth (dashboard uses cookies)
+  const { getCookie } = await import('hono/cookie');
+  const { verifyToken } = await import('../auth/jwt.js');
+  
+  const accessToken = getCookie(c, 'access_token');
+  if (!accessToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  try {
+    const payload = await verifyToken(accessToken);
+    if (!payload || !payload.sub) {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+    
+    const userId = payload.sub;
+    
+    // Get all non-expired files for this user
+    const userFiles = await db
+      .select({
+        id: piiFiles.id,
+        filename: piiFiles.filename,
+        mimeType: piiFiles.mimeType,
+        courseId: piiFiles.courseId,
+        isUnmasked: piiFiles.isUnmasked,
+        expiresAt: piiFiles.expiresAt,
+        createdAt: piiFiles.createdAt,
+        downloadedAt: piiFiles.downloadedAt,
+      })
+      .from(piiFiles)
+      .where(eq(piiFiles.ownerUserId, userId));
+    
+    // Filter out expired and format for response
+    const now = new Date();
+    const activeFiles = userFiles
+      .filter(f => f.expiresAt > now)
+      .map(f => ({
+        id: f.id,
+        filename: f.filename,
+        mime_type: f.mimeType,
+        course_id: f.courseId,
+        is_downloaded: f.isUnmasked,
+        expires_at: f.expiresAt.toISOString(),
+        created_at: f.createdAt?.toISOString(),
+        downloaded_at: f.downloadedAt?.toISOString(),
+        time_remaining_ms: f.expiresAt.getTime() - now.getTime(),
+      }));
+    
+    return c.json({ files: activeFiles });
+  } catch (error) {
+    console.error('Error listing files:', error);
+    return c.json({ error: 'Failed to list files' }, 500);
+  }
+});
+
+/**
+ * Delete a file
+ * 
+ * DELETE /files/:id
+ * Requires cookie auth (owner only)
+ */
+files.delete('/:id', async (c) => {
+  const fileId = c.req.param('id');
+  
+  // Get userId from cookie-based auth
+  const { getCookie } = await import('hono/cookie');
+  const { verifyToken } = await import('../auth/jwt.js');
+  
+  const accessToken = getCookie(c, 'access_token');
+  if (!accessToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  try {
+    const payload = await verifyToken(accessToken);
+    if (!payload || !payload.sub) {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+    
+    const userId = payload.sub;
+    
+    // Find the file and verify ownership
+    const [file] = await db
+      .select()
+      .from(piiFiles)
+      .where(eq(piiFiles.id, fileId));
+    
+    if (!file) {
+      return c.json({ error: 'File not found' }, 404);
+    }
+    
+    if (file.ownerUserId !== userId) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+    
+    // Delete the file
+    await db.delete(piiFiles).where(eq(piiFiles.id, fileId));
+    
+    return c.json({ success: true, message: 'File deleted' });
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    return c.json({ error: 'Failed to delete file' }, 500);
+  }
+});
+
+/**
  * Cleanup expired files (called periodically)
  */
 export async function cleanupExpiredFiles(): Promise<number> {

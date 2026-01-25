@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js';
 import apiRoutes from './routes/api.js';
 import mcpRoutes from './routes/mcp.js';
 import oauthRoutes from './oauth/index.js';
+import fileRoutes from './routes/files.js';
 import { connectionManager } from './bridge/connection-manager.js';
 import { verifyToken } from './auth/jwt.js';
 import { db, users } from './db/index.js';
@@ -216,6 +217,9 @@ app.route('/auth', authRoutes);
 
 // API routes (requires auth)
 app.route('/api', apiRoutes);
+
+// File download routes (for unmasked file downloads)
+app.route('/files', fileRoutes);
 
 // MCP routes
 app.route('/mcp', mcpRoutes);

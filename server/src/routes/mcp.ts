@@ -1431,6 +1431,60 @@ async function handleToolCall(
         };
         break;
 
+      case 'create_download_file':
+        // Import file handling
+        const { piiFiles } = await import('../pii/file-schema.js');
+        const { randomBytes } = await import('crypto');
+        
+        const fileContent = args.is_base64 
+          ? Buffer.from(args.content, 'base64')
+          : Buffer.from(args.content, 'utf-8');
+        
+        const filename = args.filename;
+        const fileCourseId = args.course_id;
+        
+        // Detect MIME type from filename
+        const ext = filename.toLowerCase().split('.').pop();
+        const mimeTypes: Record<string, string> = {
+          csv: 'text/csv',
+          tsv: 'text/tab-separated-values',
+          txt: 'text/plain',
+          docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        };
+        const mimeType = mimeTypes[ext || ''] || 'application/octet-stream';
+        
+        // Generate file ID and expiration (1 hour)
+        const fileId = randomBytes(16).toString('hex');
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+        
+        // Store the file
+        await db.insert(piiFiles).values({
+          id: fileId,
+          ownerUserId: userId,
+          courseId: fileCourseId,
+          filename,
+          mimeType,
+          content: fileContent,
+          isUnmasked: false,
+          expiresAt,
+        });
+        
+        // Build download URL (will be unmasked when accessed)
+        const serverUrl = process.env.SERVER_URL || 'https://moodle-mcp-server.fly.dev';
+        const downloadUrl = `${serverUrl}/files/${fileId}`;
+        
+        result = {
+          success: true,
+          file_id: fileId,
+          download_url: downloadUrl,
+          expires_at: expiresAt.toISOString(),
+          filename,
+          note: 'File will be unmasked with real student names when downloaded',
+        };
+        break;
+
       default:
         return {
           jsonrpc: '2.0',

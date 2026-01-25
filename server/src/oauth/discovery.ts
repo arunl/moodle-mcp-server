@@ -6,6 +6,7 @@
  */
 
 import { Hono } from 'hono';
+import { versionInfo } from '../version.js';
 
 const discovery = new Hono();
 
@@ -32,6 +33,13 @@ discovery.get('/oauth-authorization-server', (c) => {
     
     // Optional endpoints
     userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+    
+    // Documentation and version info
+    service_documentation: `${baseUrl}/docs`,
+    
+    // Non-standard but useful: version info
+    'x-moodle-mcp-version': versionInfo.version,
+    'x-moodle-mcp-commit': versionInfo.commit,
   });
 });
 

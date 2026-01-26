@@ -702,6 +702,15 @@ You can provide EITHER:
 - forum_id: The internal forum ID (from forum_list_discussions or post.php URLs)
 - forum_cmid: The course module ID (from view.php?id=... URLs) - the tool will auto-extract the forum_id
 
+HOW TO FIND THE FORUM ID:
+1. Use get_course_content(course_id) to list all activities in the course
+2. Look for forum links in the results - they have URLs like: mod/forum/view.php?id=2618458
+3. The number after "id=" is the forum_cmid (e.g., 2618458)
+4. Common forum names: "Course Announcements", "Q&A Forum", "Discussion Forum"
+
+Example: To post to "Course Announcements" forum with cmid 2618458:
+  create_forum_post(forum_cmid=2618458, course_id=56569, subject="...", message="...")
+
 ACCESSIBILITY REQUIREMENTS for message content:
 1. TABLES: Include <caption>, use <th scope="col/row"> for headers
 2. HEADINGS: Use h3/h4 (h2 is post title), maintain hierarchy

@@ -111,6 +111,10 @@ Use CSS selectors to identify elements. Common patterns:
           description: 'Whether to clear the field before typing. Defaults to true.',
           default: true,
         },
+        course_id: {
+          type: 'number',
+          description: 'Course ID for unmasking student names (M12345_name tokens) in the text.',
+        },
       },
       required: ['selector', 'text'],
     },
@@ -186,6 +190,10 @@ ACCESSIBILITY REQUIREMENTS - All HTML content MUST follow these guidelines:
           type: 'boolean',
           description: 'Whether to automatically click a submit button after setting content.',
           default: false,
+        },
+        course_id: {
+          type: 'number',
+          description: 'Course ID for unmasking student names (M12345_name tokens) in the content.',
         },
       },
       required: ['html_content'],

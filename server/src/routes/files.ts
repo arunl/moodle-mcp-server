@@ -18,9 +18,7 @@ import { Hono } from 'hono';
 import { db } from '../db/index.js';
 import { piiFiles } from '../pii/file-schema.js';
 import { piiRosters } from '../pii/schema.js';
-import { piiCourses } from '../pii/course-schema.js';
 import { unmaskFile } from '../pii/files.js';
-import { getUserCourses } from '../pii/roster.js';
 import { eq, and, lt, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 
@@ -172,7 +170,7 @@ files.post('/upload', async (c) => {
  * GET /files/courses
  * Requires cookie auth (from dashboard)
  * 
- * Returns courses that the user has roster data for, with names if available.
+ * Returns distinct courses that the user has roster data for.
  * NOTE: This route MUST be defined before /:id to avoid being caught by the wildcard
  */
 files.get('/courses', async (c) => {
@@ -192,30 +190,21 @@ files.get('/courses', async (c) => {
     
     const userId = payload.sub;
     
-    // Get courses with names from pii_courses
-    const namedCourses = await getUserCourses(userId);
-    const courseNameMap = new Map(namedCourses.map(c => [c.courseId, c.courseName]));
-    
-    // Get distinct course IDs from the roster (in case some don't have names yet)
-    const rosterCourses = await db
+    // Get distinct course IDs from the roster
+    const courses = await db
       .selectDistinct({
         courseId: piiRosters.courseId,
       })
       .from(piiRosters)
       .where(eq(piiRosters.ownerUserId, userId));
     
-    // Merge: use name from pii_courses if available, otherwise just show ID
-    const allCourseIds = new Set([
-      ...namedCourses.map(c => c.courseId),
-      ...rosterCourses.map(c => c.courseId),
-    ]);
-    
-    const courses = Array.from(allCourseIds).map(id => ({
-      id,
-      name: courseNameMap.get(id) || `Course ${id}`,
-    })).sort((a, b) => a.name.localeCompare(b.name));
-    
-    return c.json({ courses });
+    return c.json({ 
+      courses: courses.map(c => ({ 
+        id: c.courseId,
+        // We don't have course names stored - the dashboard could fetch from Moodle
+        name: `Course ${c.courseId}` 
+      }))
+    });
   } catch (error) {
     console.error('Error listing courses:', error);
     return c.json({ error: 'Failed to list courses' }, 500);
@@ -267,18 +256,29 @@ files.get('/list', async (c) => {
     // Filter out expired and format for response
     const now = new Date();
     const activeFiles = userFiles
-      .filter(f => f.expiresAt > now)
-      .map(f => ({
-        id: f.id,
-        filename: f.filename,
-        mime_type: f.mimeType,
-        course_id: f.courseId,
-        is_downloaded: f.isUnmasked,
-        expires_at: f.expiresAt.toISOString(),
-        created_at: f.createdAt?.toISOString(),
-        downloaded_at: f.downloadedAt?.toISOString(),
-        time_remaining_ms: f.expiresAt.getTime() - now.getTime(),
-      }));
+      .filter(f => {
+        // Handle both Date objects and timestamps
+        const expiresAt = f.expiresAt instanceof Date ? f.expiresAt : new Date(f.expiresAt);
+        return expiresAt > now;
+      })
+      .map(f => {
+        // Safely convert timestamps to Date objects
+        const expiresAt = f.expiresAt instanceof Date ? f.expiresAt : new Date(f.expiresAt);
+        const createdAt = f.createdAt ? (f.createdAt instanceof Date ? f.createdAt : new Date(f.createdAt)) : null;
+        const downloadedAt = f.downloadedAt ? (f.downloadedAt instanceof Date ? f.downloadedAt : new Date(f.downloadedAt)) : null;
+        
+        return {
+          id: f.id,
+          filename: f.filename,
+          mime_type: f.mimeType,
+          course_id: f.courseId,
+          is_downloaded: f.isUnmasked,
+          expires_at: expiresAt.toISOString(),
+          created_at: createdAt?.toISOString() || null,
+          downloaded_at: downloadedAt?.toISOString() || null,
+          time_remaining_ms: expiresAt.getTime() - now.getTime(),
+        };
+      });
     
     return c.json({ files: activeFiles });
   } catch (error) {

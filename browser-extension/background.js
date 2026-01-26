@@ -553,44 +553,11 @@ async function handleExtractParticipants(id, params, tab) {
       // Get total count from page text
       const totalMatch = document.body.textContent.match(/(\d+)\s*participants?\s*found/i);
       
-      // Extract course title from page
-      // Try multiple selectors: page title, breadcrumb, header
-      let courseTitle = null;
-      
-      // Method 1: Page header (most reliable)
-      const headerEl = document.querySelector('.page-header-headings h1, h1.h2, .course-title');
-      if (headerEl) {
-        courseTitle = headerEl.textContent.trim();
-      }
-      
-      // Method 2: Breadcrumb - look for the course link
-      if (!courseTitle) {
-        const breadcrumbs = document.querySelectorAll('nav[aria-label="Navigation bar"] a[href*="course/view.php"], .breadcrumb a[href*="course/view.php"]');
-        for (const crumb of breadcrumbs) {
-          const text = crumb.textContent.trim();
-          // Skip generic navigation items
-          if (text && text !== 'Home' && text !== 'Dashboard' && text !== 'My courses' && text.length > 3) {
-            courseTitle = text;
-            break;
-          }
-        }
-      }
-      
-      // Method 3: Document title (fallback)
-      if (!courseTitle) {
-        const titleParts = document.title.split(':');
-        if (titleParts.length > 1) {
-          // Usually format: "Participants: Course Name"
-          courseTitle = titleParts.slice(1).join(':').trim();
-        }
-      }
-      
       return {
         success: true,
         data: {
           participants,
           total: totalMatch ? parseInt(totalMatch[1]) : participants.length,
-          courseTitle,
           url: window.location.href,
           tableFound: !!targetTable,
         },

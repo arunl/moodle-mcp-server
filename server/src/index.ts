@@ -1263,7 +1263,7 @@ const dashboardPageHtml = `
           data.courses.forEach(course => {
             const option = document.createElement('option');
             option.value = course.id;
-            option.textContent = 'Course ' + course.id;
+            option.textContent = course.name;
             select.appendChild(option);
           });
         }

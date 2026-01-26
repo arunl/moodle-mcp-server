@@ -26,24 +26,25 @@ async function main() {
     console.log('Table might not exist:', e);
   }
   
-  console.log('Creating pii_courses table...');
+  console.log('Creating pii_courses table with inline UNIQUE constraint...');
   
+  // Use inline UNIQUE constraint - this is what Drizzle's onConflictDoUpdate expects
   await client.execute(`
     CREATE TABLE pii_courses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       owner_user_id TEXT NOT NULL,
       course_id INTEGER NOT NULL,
       course_name TEXT NOT NULL,
-      created_at INTEGER DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
-      updated_at INTEGER DEFAULT (CAST(strftime('%s', 'now') AS INTEGER))
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(owner_user_id, course_id)
     )
   `);
-  console.log('✓ Table created');
+  console.log('✓ Table created with UNIQUE constraint');
   
-  await client.execute(`
-    CREATE UNIQUE INDEX unique_course_entry ON pii_courses (owner_user_id, course_id)
-  `);
-  console.log('✓ Index created');
+  // Verify
+  const indexes = await client.execute('PRAGMA index_list(pii_courses)');
+  console.log('Indexes:', JSON.stringify(indexes.rows));
   
   console.log('Done!');
 }

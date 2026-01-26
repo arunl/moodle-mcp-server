@@ -40,17 +40,21 @@ function getVersionJson(): VersionJson {
   try {
     // Try multiple paths (dev vs production)
     const paths = [
-      join(__dirname, '..', 'version.json'),      // Production: dist/../version.json
+      join(__dirname, '..', 'version.json'),      // Production: dist/../version.json = /app/version.json
       join(__dirname, '..', '..', 'version.json'), // Dev: src/../version.json
+      '/app/version.json',                        // Docker absolute path fallback
     ];
     
     for (const versionPath of paths) {
       if (existsSync(versionPath)) {
-        return JSON.parse(readFileSync(versionPath, 'utf-8'));
+        const content = JSON.parse(readFileSync(versionPath, 'utf-8'));
+        console.log(`[Version] Loaded from ${versionPath}:`, content);
+        return content;
       }
     }
-  } catch {
-    // Ignore errors
+    console.log('[Version] No version.json found, checked paths:', paths);
+  } catch (error) {
+    console.error('[Version] Error reading version.json:', error);
   }
   return {};
 }

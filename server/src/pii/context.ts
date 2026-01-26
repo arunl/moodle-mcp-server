@@ -112,13 +112,35 @@ export async function unmaskArgs(
 ): Promise<Record<string, unknown>> {
   const courseId = courseIdOverride ?? getCourseContext(userId);
   
+  console.log(`[PII] unmaskArgs: userId=${userId}, courseIdOverride=${courseIdOverride}, resolvedCourseId=${courseId}`);
+  
   if (!courseId) {
     // No course context - can't unmask, return as-is
+    console.log('[PII] unmaskArgs: No courseId, skipping unmask');
     return args;
   }
   
   const roster = await getCachedRoster(userId, courseId);
-  return unmaskStructuredData(args, roster) as Record<string, unknown>;
+  console.log(`[PII] unmaskArgs: roster size=${roster.length}`);
+  
+  if (roster.length > 0) {
+    // Log sample of roster entries for debugging
+    const sample = roster.slice(0, 3).map(e => `M${e.moodleUserId}=${e.displayName}`);
+    console.log(`[PII] unmaskArgs: sample roster entries: ${sample.join(', ')}`);
+  }
+  
+  const result = unmaskStructuredData(args, roster) as Record<string, unknown>;
+  
+  // Check if any string fields changed
+  const argsStr = JSON.stringify(args);
+  const resultStr = JSON.stringify(result);
+  if (argsStr !== resultStr) {
+    console.log('[PII] unmaskArgs: Content was modified by unmask');
+  } else {
+    console.log('[PII] unmaskArgs: Content unchanged (no tokens matched or roster empty)');
+  }
+  
+  return result;
 }
 
 /**

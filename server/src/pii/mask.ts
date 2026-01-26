@@ -5,17 +5,26 @@ import { buildRosterLookup } from './roster.js';
 export { buildRosterLookup };
 
 /**
- * Mask token format: M{moodleId}:{type}
+ * Mask token format: M{moodleId}_{type}
+ * Examples: M12345_name, M12345_CID, M12345_email
+ * 
+ * Uses underscore separator instead of colon because some LLMs strip colons
+ * thinking they're key-value separators.
+ */
+const MASK_TOKEN_PATTERN = /M(\d+)_(name|CID|email)/g;
+
+/**
+ * Legacy mask token format with colon separator (for backward compatibility)
  * Examples: M12345:name, M12345:CID, M12345:email
  */
-const MASK_TOKEN_PATTERN = /M(\d+):(name|CID|email)/g;
+const LEGACY_MASK_TOKEN_PATTERN = /M(\d+):(name|CID|email)/g;
 
 /**
  * Bare mask token format: M{moodleId} without type suffix
- * Some LLMs strip the :name/:CID/:email suffix, so we also match bare tokens
+ * Some LLMs strip the _name/_CID/_email suffix, so we also match bare tokens
  * These are treated as names by default
  */
-const BARE_MASK_TOKEN_PATTERN = /\bM(\d{3,6})\b(?!:)/g;
+const BARE_MASK_TOKEN_PATTERN = /\bM(\d{3,6})\b(?![_:])/g;
 
 /**
  * Pattern for student IDs (C followed by 7-8 digits)
@@ -149,7 +158,7 @@ export function maskPII(text: string, roster: PiiRosterEntry[]): string {
   for (const entry of roster) {
     if (entry.email) {
       const emailPattern = new RegExp(escapeRegex(entry.email), 'gi');
-      masked = masked.replace(emailPattern, `M${entry.moodleUserId}:email`);
+      masked = masked.replace(emailPattern, `M${entry.moodleUserId}_email`);
     }
   }
   
@@ -159,7 +168,7 @@ export function maskPII(text: string, roster: PiiRosterEntry[]): string {
     const patterns = generateNamePatterns(entry);
     for (const pattern of patterns) {
       const nameRegex = new RegExp(pattern, 'gi');
-      masked = masked.replace(nameRegex, `M${entry.moodleUserId}:name`);
+      masked = masked.replace(nameRegex, `M${entry.moodleUserId}_name`);
     }
   }
   
@@ -168,7 +177,7 @@ export function maskPII(text: string, roster: PiiRosterEntry[]): string {
   for (const entry of roster) {
     if (entry.studentId) {
       const cidPattern = new RegExp(escapeRegex(entry.studentId), 'gi');
-      masked = masked.replace(cidPattern, `M${entry.moodleUserId}:CID`);
+      masked = masked.replace(cidPattern, `M${entry.moodleUserId}_CID`);
     }
   }
   
@@ -189,7 +198,7 @@ function maskUnknownPII(text: string): string {
   // 1. Mask names following title prefixes (Dr., Prof., etc.)
   masked = masked.replace(TITLE_NAME_PATTERN, (match, title, name) => {
     // Check if this looks like it was already masked
-    if (name.includes('M') && name.includes(':')) {
+    if (name.includes('M') && (name.includes('_') || name.includes(':'))) {
       return match; // Already a token
     }
     return `${title}. ${maskNameOneWay(name)}`;
@@ -197,14 +206,14 @@ function maskUnknownPII(text: string): string {
   
   // 2. Mask remaining student IDs (not already tokenized)
   masked = masked.replace(STUDENT_ID_PATTERN, (cid) => {
-    // Check if it's part of a token (M#####:CID pattern nearby)
+    // Check if it's part of a token (M#####_CID pattern nearby)
     return maskStudentIdOneWay(cid);
   });
   
   // 3. Mask remaining emails (not already tokenized)
   masked = masked.replace(EMAIL_PATTERN, (email) => {
     // Check if it looks like a token
-    if (email.includes(':email')) {
+    if (email.includes('_email') || email.includes(':email')) {
       return email; // Already a token reference
     }
     return maskEmailOneWay(email);
@@ -216,9 +225,10 @@ function maskUnknownPII(text: string): string {
 /**
  * Unmask PII tokens before posting to Moodle (ingress)
  * 
- * Reverses both:
- * - Full tokens: M#####:type (name, CID, email)
- * - Bare tokens: M##### (treated as names - some LLMs strip the :type suffix)
+ * Reverses:
+ * - Full tokens (new format): M#####_type (name, CID, email)
+ * - Full tokens (legacy format): M#####:type (name, CID, email)
+ * - Bare tokens: M##### (treated as names - some LLMs strip the suffix)
  * 
  * One-way masks (Jac***, C***456, jac**@domain) stay as-is
  * 
@@ -233,8 +243,8 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
   
   const lookup = buildRosterLookup(roster);
   
-  // First pass: unmask full tokens with type suffix (M12345:name, M12345:CID, etc.)
-  let result = text.replace(MASK_TOKEN_PATTERN, (match, moodleIdStr, type) => {
+  // Helper function to unmask a token by type
+  const unmaskToken = (match: string, moodleIdStr: string, type: string) => {
     const moodleId = parseInt(moodleIdStr, 10);
     const entry = lookup.byMoodleId.get(moodleId);
     
@@ -253,10 +263,16 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
       default:
         return match;
     }
-  });
+  };
   
-  // Second pass: unmask bare tokens without type suffix (M12345)
-  // Some LLMs strip the :name/:CID/:email suffix, so treat bare tokens as names
+  // First pass: unmask new format tokens (M12345_name, M12345_CID, etc.)
+  let result = text.replace(MASK_TOKEN_PATTERN, unmaskToken);
+  
+  // Second pass: unmask legacy format tokens (M12345:name, M12345:CID, etc.)
+  result = result.replace(LEGACY_MASK_TOKEN_PATTERN, unmaskToken);
+  
+  // Third pass: unmask bare tokens without type suffix (M12345)
+  // Some LLMs strip the _name/_CID/_email suffix, so treat bare tokens as names
   result = result.replace(BARE_MASK_TOKEN_PATTERN, (match, moodleIdStr) => {
     const moodleId = parseInt(moodleIdStr, 10);
     const entry = lookup.byMoodleId.get(moodleId);
@@ -274,21 +290,34 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
 }
 
 /**
- * Check if text contains any mask tokens
+ * Check if text contains any mask tokens (new or legacy format)
  */
 export function containsMaskTokens(text: string): boolean {
-  return MASK_TOKEN_PATTERN.test(text);
+  return MASK_TOKEN_PATTERN.test(text) || LEGACY_MASK_TOKEN_PATTERN.test(text) || BARE_MASK_TOKEN_PATTERN.test(text);
 }
 
 /**
- * Extract all Moodle IDs referenced in mask tokens
+ * Extract all Moodle IDs referenced in mask tokens (new, legacy, and bare formats)
  */
 export function extractMoodleIds(text: string): number[] {
   const ids: number[] = [];
   let match;
-  const pattern = new RegExp(MASK_TOKEN_PATTERN.source, 'g');
   
-  while ((match = pattern.exec(text)) !== null) {
+  // Check new format (underscore)
+  const newPattern = new RegExp(MASK_TOKEN_PATTERN.source, 'g');
+  while ((match = newPattern.exec(text)) !== null) {
+    ids.push(parseInt(match[1], 10));
+  }
+  
+  // Check legacy format (colon)
+  const legacyPattern = new RegExp(LEGACY_MASK_TOKEN_PATTERN.source, 'g');
+  while ((match = legacyPattern.exec(text)) !== null) {
+    ids.push(parseInt(match[1], 10));
+  }
+  
+  // Check bare format
+  const barePattern = new RegExp(BARE_MASK_TOKEN_PATTERN.source, 'g');
+  while ((match = barePattern.exec(text)) !== null) {
     ids.push(parseInt(match[1], 10));
   }
   

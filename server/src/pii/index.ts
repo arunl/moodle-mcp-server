@@ -8,10 +8,13 @@
  * - Masking (egress): Replace PII with tokens before sending to LLM
  * - Unmasking (ingress): Replace tokens with PII before posting to Moodle
  * 
- * Token format: M{moodleId}:{type}
- * - M12345:name → "Jackson Smith"
- * - M12345:CID → "C00123456"
- * - M12345:email → "jackson.smith@louisiana.edu"
+ * Token format: M{moodleId}_{type} (underscore separator)
+ * - M12345_name → "Jackson Smith"
+ * - M12345_CID → "C00123456"
+ * - M12345_email → "jackson.smith@louisiana.edu"
+ * 
+ * Legacy format (still supported for unmasking): M{moodleId}:{type}
+ * Bare tokens (M12345) are also unmasked as names (for LLMs that strip suffixes)
  * 
  * One-way masks (for unknown PII):
  * - Names: "Jac*** Smi***" (if detectable via title prefix)

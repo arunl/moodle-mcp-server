@@ -263,19 +263,24 @@ files.get('/list', async (c) => {
       .from(piiFiles)
       .where(eq(piiFiles.ownerUserId, userId));
     
+    // Helper to safely convert to Date and check validity
+    const toSafeDate = (value: unknown): Date | null => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(value as number | string);
+      return isNaN(date.getTime()) ? null : date;
+    };
+    
     // Filter out expired and format for response
     const now = new Date();
     const activeFiles = userFiles
       .filter(f => {
-        // Handle both Date objects and timestamps
-        const expiresAt = f.expiresAt instanceof Date ? f.expiresAt : new Date(f.expiresAt);
-        return expiresAt > now;
+        const expiresAt = toSafeDate(f.expiresAt);
+        return expiresAt && expiresAt > now;
       })
       .map(f => {
-        // Safely convert timestamps to Date objects
-        const expiresAt = f.expiresAt instanceof Date ? f.expiresAt : new Date(f.expiresAt);
-        const createdAt = f.createdAt ? (f.createdAt instanceof Date ? f.createdAt : new Date(f.createdAt)) : null;
-        const downloadedAt = f.downloadedAt ? (f.downloadedAt instanceof Date ? f.downloadedAt : new Date(f.downloadedAt)) : null;
+        const expiresAt = toSafeDate(f.expiresAt);
+        const createdAt = toSafeDate(f.createdAt);
+        const downloadedAt = toSafeDate(f.downloadedAt);
         
         return {
           id: f.id,
@@ -283,10 +288,10 @@ files.get('/list', async (c) => {
           mime_type: f.mimeType,
           course_id: f.courseId,
           is_downloaded: f.isUnmasked,
-          expires_at: expiresAt.toISOString(),
+          expires_at: expiresAt?.toISOString() || null,
           created_at: createdAt?.toISOString() || null,
           downloaded_at: downloadedAt?.toISOString() || null,
-          time_remaining_ms: expiresAt.getTime() - now.getTime(),
+          time_remaining_ms: expiresAt ? expiresAt.getTime() - now.getTime() : 0,
         };
       });
     

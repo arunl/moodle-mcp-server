@@ -392,6 +392,15 @@ async function handleToolCall(
         await sendBrowserCommand(userId, 'wait', { selector: 'table#participants, table.generaltable', timeout: 10000 });
         // Use CSP-safe dedicated handler instead of evaluate
         const participantsResult = await sendBrowserCommand(userId, 'extract_participants', {});
+        
+        // Debug: log the raw result structure
+        console.log(`[MCP] list_participants raw result keys: ${Object.keys(participantsResult || {}).join(', ')}`);
+        console.log(`[MCP] list_participants has .data: ${!!participantsResult?.data}`);
+        if (participantsResult?.data) {
+          console.log(`[MCP] list_participants .data keys: ${Object.keys(participantsResult.data).join(', ')}`);
+          console.log(`[MCP] list_participants .data.courseTitle: ${participantsResult.data.courseTitle}`);
+        }
+        
         // Flatten the result: browser extension returns { id, success, data: {...} }
         // We want { page, perpage, participants, total, courseTitle, url, tableFound }
         const participantsData = participantsResult?.data || participantsResult || {};
@@ -401,14 +410,19 @@ async function handleToolCall(
           ...participantsData,  // Flatten data fields to top level
         };
         
+        console.log(`[MCP] list_participants result.courseTitle: ${result.courseTitle}`);
+        
         // Save course title if extracted (now at top level after flattening)
         if (result.courseTitle) {
           try {
+            console.log(`[MCP] Calling upsertCourseName for course ${args.course_id} with name: ${result.courseTitle}`);
             await upsertCourseName(userId, args.course_id, result.courseTitle);
-            console.log(`[MCP] Saved course name: ${result.courseTitle} for course ${args.course_id}`);
+            console.log(`[MCP] Successfully saved course name: ${result.courseTitle} for course ${args.course_id}`);
           } catch (e) {
-            console.warn('[MCP] Failed to save course name:', e);
+            console.error('[MCP] Failed to save course name:', e);
           }
+        } else {
+          console.log(`[MCP] No courseTitle found in result`);
         }
         break;
 

@@ -11,6 +11,13 @@ export { buildRosterLookup };
 const MASK_TOKEN_PATTERN = /M(\d+):(name|CID|email)/g;
 
 /**
+ * Bare mask token format: M{moodleId} without type suffix
+ * Some LLMs strip the :name/:CID/:email suffix, so we also match bare tokens
+ * These are treated as names by default
+ */
+const BARE_MASK_TOKEN_PATTERN = /\bM(\d{3,6})\b(?!:)/g;
+
+/**
  * Pattern for student IDs (C followed by 7-8 digits)
  */
 const STUDENT_ID_PATTERN = /\bC\d{7,8}\b/gi;
@@ -209,7 +216,10 @@ function maskUnknownPII(text: string): string {
 /**
  * Unmask PII tokens before posting to Moodle (ingress)
  * 
- * Only reverses the M#####:type tokens (reversible masks)
+ * Reverses both:
+ * - Full tokens: M#####:type (name, CID, email)
+ * - Bare tokens: M##### (treated as names - some LLMs strip the :type suffix)
+ * 
  * One-way masks (Jac***, C***456, jac**@domain) stay as-is
  * 
  * @param text - The text to unmask
@@ -223,7 +233,8 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
   
   const lookup = buildRosterLookup(roster);
   
-  return text.replace(MASK_TOKEN_PATTERN, (match, moodleIdStr, type) => {
+  // First pass: unmask full tokens with type suffix (M12345:name, M12345:CID, etc.)
+  let result = text.replace(MASK_TOKEN_PATTERN, (match, moodleIdStr, type) => {
     const moodleId = parseInt(moodleIdStr, 10);
     const entry = lookup.byMoodleId.get(moodleId);
     
@@ -243,6 +254,23 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
         return match;
     }
   });
+  
+  // Second pass: unmask bare tokens without type suffix (M12345)
+  // Some LLMs strip the :name/:CID/:email suffix, so treat bare tokens as names
+  result = result.replace(BARE_MASK_TOKEN_PATTERN, (match, moodleIdStr) => {
+    const moodleId = parseInt(moodleIdStr, 10);
+    const entry = lookup.byMoodleId.get(moodleId);
+    
+    if (!entry) {
+      // Entry not in roster - can't unmask, leave token
+      return match;
+    }
+    
+    // Bare tokens default to name
+    return entry.displayName;
+  });
+  
+  return result;
 }
 
 /**

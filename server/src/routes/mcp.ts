@@ -396,33 +396,32 @@ async function handleToolCall(
         // Debug: log the raw result structure
         console.log(`[MCP] list_participants raw result keys: ${Object.keys(participantsResult || {}).join(', ')}`);
         console.log(`[MCP] list_participants has .data: ${!!participantsResult?.data}`);
-        if (participantsResult?.data) {
-          console.log(`[MCP] list_participants .data keys: ${Object.keys(participantsResult.data).join(', ')}`);
-          console.log(`[MCP] list_participants .data.courseTitle: ${participantsResult.data.courseTitle}`);
-        }
         
         // Flatten the result: browser extension returns { id, success, data: {...} }
         // We want { page, perpage, participants, total, courseTitle, url, tableFound }
         const participantsData = participantsResult?.data || participantsResult || {};
+        
+        // Capture courseTitle BEFORE building result (to ensure we have it)
+        const extractedCourseTitle = participantsData.courseTitle as string | undefined;
+        console.log(`[MCP] extractedCourseTitle: ${extractedCourseTitle}`);
+        
         result = { 
           page: args.page ?? 0, 
           perpage, 
           ...participantsData,  // Flatten data fields to top level
         };
         
-        console.log(`[MCP] list_participants result.courseTitle: ${result.courseTitle}`);
-        
-        // Save course title if extracted (now at top level after flattening)
-        if (result.courseTitle) {
+        // Save course title if extracted
+        if (extractedCourseTitle) {
           try {
-            console.log(`[MCP] Calling upsertCourseName for course ${args.course_id} with name: ${result.courseTitle}`);
-            await upsertCourseName(userId, args.course_id, result.courseTitle);
-            console.log(`[MCP] Successfully saved course name: ${result.courseTitle} for course ${args.course_id}`);
+            console.log(`[MCP] Calling upsertCourseName for course ${args.course_id} with name: ${extractedCourseTitle}`);
+            await upsertCourseName(userId, args.course_id, extractedCourseTitle);
+            console.log(`[MCP] Successfully saved course name: ${extractedCourseTitle} for course ${args.course_id}`);
           } catch (e) {
             console.error('[MCP] Failed to save course name:', e);
           }
         } else {
-          console.log(`[MCP] No courseTitle found in result`);
+          console.log(`[MCP] No courseTitle found in participantsData`);
         }
         break;
 

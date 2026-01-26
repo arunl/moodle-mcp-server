@@ -391,14 +391,21 @@ async function handleToolCall(
         });
         await sendBrowserCommand(userId, 'wait', { selector: 'table#participants, table.generaltable', timeout: 10000 });
         // Use CSP-safe dedicated handler instead of evaluate
-        result = await sendBrowserCommand(userId, 'extract_participants', {});
-        result = { page: args.page ?? 0, perpage, ...result };
+        const participantsResult = await sendBrowserCommand(userId, 'extract_participants', {});
+        // Flatten the result: browser extension returns { id, success, data: {...} }
+        // We want { page, perpage, participants, total, courseTitle, url, tableFound }
+        const participantsData = participantsResult?.data || participantsResult || {};
+        result = { 
+          page: args.page ?? 0, 
+          perpage, 
+          ...participantsData,  // Flatten data fields to top level
+        };
         
-        // Save course title if extracted
-        if (result.data?.courseTitle) {
+        // Save course title if extracted (now at top level after flattening)
+        if (result.courseTitle) {
           try {
-            await upsertCourseName(userId, args.course_id, result.data.courseTitle);
-            console.log(`[MCP] Saved course name: ${result.data.courseTitle} for course ${args.course_id}`);
+            await upsertCourseName(userId, args.course_id, result.courseTitle);
+            console.log(`[MCP] Saved course name: ${result.courseTitle} for course ${args.course_id}`);
           } catch (e) {
             console.warn('[MCP] Failed to save course name:', e);
           }

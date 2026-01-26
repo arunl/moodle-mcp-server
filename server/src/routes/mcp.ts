@@ -16,6 +16,7 @@ import {
   shouldUpdateRoster,
   shouldUnmaskArgs,
   extractParticipantsFromResult,
+  upsertCourseName,
 } from '../pii/index.js';
 
 /**
@@ -392,6 +393,16 @@ async function handleToolCall(
         // Use CSP-safe dedicated handler instead of evaluate
         result = await sendBrowserCommand(userId, 'extract_participants', {});
         result = { page: args.page ?? 0, perpage, ...result };
+        
+        // Save course title if extracted
+        if (result.data?.courseTitle) {
+          try {
+            await upsertCourseName(userId, args.course_id, result.data.courseTitle);
+            console.log(`[MCP] Saved course name: ${result.data.courseTitle} for course ${args.course_id}`);
+          } catch (e) {
+            console.warn('[MCP] Failed to save course name:', e);
+          }
+        }
         break;
 
       case 'enable_editing':

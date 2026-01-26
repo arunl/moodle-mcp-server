@@ -18,7 +18,10 @@ COPY scripts ./scripts
 
 # Generate version.json from build args (set by CI/CD)
 # COMMIT_SHA and BUILD_DATE are passed from GitHub Actions or manual fly deploy
-RUN echo "{\"commit\":\"${COMMIT_SHA:0:7}\",\"commitFull\":\"${COMMIT_SHA}\",\"branch\":\"master\",\"buildDate\":\"${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}\"}" > version.json && \
+# Note: Using printf + cut for portable substring (Alpine sh doesn't support ${VAR:0:7})
+RUN SHORT_SHA=$(printf "%.7s" "${COMMIT_SHA}") && \
+    BUILD_TS="${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
+    echo "{\"commit\":\"${SHORT_SHA}\",\"commitFull\":\"${COMMIT_SHA}\",\"branch\":\"master\",\"buildDate\":\"${BUILD_TS}\"}" > version.json && \
     cat version.json
 
 # Build TypeScript

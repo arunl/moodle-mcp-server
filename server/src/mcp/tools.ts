@@ -729,6 +729,10 @@ Example with accessible table:
           type: 'number',
           description: 'The course module ID (from view.php?id=... URLs). If provided without forum_id, the tool will navigate to the forum and extract the internal forum_id automatically.',
         },
+        course_id: {
+          type: 'number',
+          description: 'The Moodle course ID. Required for unmasking student names (M12345_name tokens) in the message.',
+        },
         subject: {
           type: 'string',
           description: 'The subject/title of the discussion.',
@@ -909,7 +913,7 @@ Example: send_message(user_id=34538, message="Hi! Please post your self-introduc
         },
         course_id: {
           type: 'number',
-          description: 'Optional: Course ID for context (helps with navigation).',
+          description: 'Course ID for unmasking student names (M12345_name tokens) in the message.',
         },
       },
       required: ['user_id', 'message'],
@@ -937,7 +941,7 @@ Example: bulk_send_message(user_ids=[123, 456, 789], message="Reminder: Please p
         },
         course_id: {
           type: 'number',
-          description: 'Optional: Course ID for context.',
+          description: 'Course ID for unmasking student names (M12345_name tokens) in the message.',
         },
       },
       required: ['user_ids', 'message'],

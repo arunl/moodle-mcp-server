@@ -19,6 +19,7 @@ import { db } from '../db/index.js';
 import { piiFiles } from '../pii/file-schema.js';
 import { piiRosters } from '../pii/schema.js';
 import { unmaskFile } from '../pii/files.js';
+import { getUserCourses } from '../pii/roster.js';
 import { eq, and, lt, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 
@@ -190,21 +191,30 @@ files.get('/courses', async (c) => {
     
     const userId = payload.sub;
     
-    // Get distinct course IDs from the roster
-    const courses = await db
+    // Get courses with names from pii_courses table
+    const namedCourses = await getUserCourses(userId);
+    const courseNameMap = new Map(namedCourses.map(c => [c.courseId, c.courseName]));
+    
+    // Get distinct course IDs from the roster (in case some don't have names yet)
+    const rosterCourses = await db
       .selectDistinct({
         courseId: piiRosters.courseId,
       })
       .from(piiRosters)
       .where(eq(piiRosters.ownerUserId, userId));
     
-    return c.json({ 
-      courses: courses.map(c => ({ 
-        id: c.courseId,
-        // We don't have course names stored - the dashboard could fetch from Moodle
-        name: `Course ${c.courseId}` 
-      }))
-    });
+    // Merge: use name from pii_courses if available, otherwise just show ID
+    const allCourseIds = new Set([
+      ...namedCourses.map(c => c.courseId),
+      ...rosterCourses.map(c => c.courseId),
+    ]);
+    
+    const courses = Array.from(allCourseIds).map(id => ({
+      id,
+      name: courseNameMap.get(id) || `Course ${id}`,
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    
+    return c.json({ courses });
   } catch (error) {
     console.error('Error listing courses:', error);
     return c.json({ error: 'Failed to list courses' }, 500);

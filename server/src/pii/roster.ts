@@ -1,5 +1,6 @@
 import { db } from '../db/index.js';
 import { piiRosters, type PiiRosterEntry, type NewPiiRosterEntry } from './schema.js';
+import { piiCourses, type PiiCourse } from './course-schema.js';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -171,4 +172,61 @@ export function buildRosterLookup(roster: PiiRosterEntry[]): {
   }
   
   return { byName, byEmail, byStudentId, byMoodleId };
+}
+
+/**
+ * Store or update course name
+ * Called when list_participants extracts course info
+ */
+export async function upsertCourseName(
+  ownerUserId: string,
+  courseId: number,
+  courseName: string
+): Promise<void> {
+  const now = new Date();
+  
+  await db
+    .insert(piiCourses)
+    .values({
+      ownerUserId,
+      courseId,
+      courseName,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [piiCourses.ownerUserId, piiCourses.courseId],
+      set: {
+        courseName,
+        updatedAt: now,
+      },
+    });
+}
+
+/**
+ * Get all courses for a user (for dropdown selectors)
+ */
+export async function getUserCourses(ownerUserId: string): Promise<PiiCourse[]> {
+  return db
+    .select()
+    .from(piiCourses)
+    .where(eq(piiCourses.ownerUserId, ownerUserId));
+}
+
+/**
+ * Get course name by ID
+ */
+export async function getCourseName(
+  ownerUserId: string,
+  courseId: number
+): Promise<string | null> {
+  const results = await db
+    .select()
+    .from(piiCourses)
+    .where(
+      and(
+        eq(piiCourses.ownerUserId, ownerUserId),
+        eq(piiCourses.courseId, courseId)
+      )
+    );
+  return results[0]?.courseName || null;
 }

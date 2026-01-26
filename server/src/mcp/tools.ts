@@ -694,6 +694,10 @@ Returns a preview of changes before applying them unless confirm=true.`,
     
 This tool navigates to the forum's new discussion page, fills in the subject and message, and submits the post.
 
+⚠️ IMPORTANT: This tool may report an error even when the post was successfully created.
+DO NOT retry on error without first checking if the post exists (use find_forum_discussion).
+Retrying can create duplicate posts.
+
 You can provide EITHER:
 - forum_id: The internal forum ID (from forum_list_discussions or post.php URLs)
 - forum_cmid: The course module ID (from view.php?id=... URLs) - the tool will auto-extract the forum_id

@@ -331,6 +331,543 @@ app.get(
 const isDevMode = process.env.NODE_ENV === 'development';
 const hasGoogleOAuth = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
+// ============================================================================
+// SHARED UI COMPONENTS
+// ============================================================================
+
+const sharedStyles = `
+  :root {
+    --bg-primary: #0a0a0f;
+    --bg-secondary: #12121a;
+    --bg-card: #1a1a24;
+    --bg-sidebar: #0f0f14;
+    --text-primary: #f0f0f5;
+    --text-secondary: #a0a0b0;
+    --text-muted: #6b7280;
+    --accent: #ff6b35;
+    --accent-hover: #ff8c5a;
+    --accent-secondary: #f7c948;
+    --success: #10b981;
+    --danger: #ef4444;
+    --info: #3b82f6;
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.15);
+  }
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--accent-hover); }
+  
+  code {
+    font-family: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+    background: var(--bg-secondary);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+  
+  /* ========== HEADER ========== */
+  .header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    z-index: 100;
+  }
+  
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+  }
+  
+  .logo {
+    font-size: 1.25rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+  }
+  
+  .logo span { color: var(--accent); }
+  
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .browser-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 100px;
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  
+  .browser-status.connected {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+  }
+  
+  .browser-status.disconnected {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+  }
+  
+  .user-menu {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 8px;
+    transition: background 0.2s;
+  }
+  
+  .user-menu:hover { background: var(--bg-card); }
+  
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+  }
+  
+  .user-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+  
+  /* ========== NAVIGATION BAR ========== */
+  .navbar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  
+  .nav-link {
+    padding: 0.5rem 1rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+  
+  .nav-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-card);
+  }
+  
+  .nav-link.active {
+    color: var(--accent);
+  }
+  
+  /* ========== SIDEBAR ========== */
+  .sidebar {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    padding: 1.5rem 0;
+    overflow-y: auto;
+  }
+  
+  .sidebar-section {
+    margin-bottom: 1.5rem;
+  }
+  
+  .sidebar-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1.25rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+  
+  .sidebar-item:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+  
+  .sidebar-item.active {
+    background: rgba(255, 107, 53, 0.1);
+    color: var(--accent);
+    border-left-color: var(--accent);
+  }
+  
+  .sidebar-item-icon {
+    font-size: 1.1rem;
+    width: 1.5rem;
+    text-align: center;
+  }
+  
+  .sidebar-nested {
+    padding-left: 1rem;
+  }
+  
+  .sidebar-nested .sidebar-item {
+    font-size: 0.85rem;
+    padding: 0.5rem 1.25rem;
+  }
+  
+  /* ========== MAIN CONTENT ========== */
+  .main-content {
+    margin-left: 260px;
+    margin-top: 60px;
+    padding: 2rem;
+    min-height: calc(100vh - 60px);
+  }
+  
+  .main-content.no-sidebar {
+    margin-left: 0;
+  }
+  
+  .main-content.centered {
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 60px;
+  }
+  
+  .page-header {
+    margin-bottom: 2rem;
+  }
+  
+  .page-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  
+  .page-description {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+  }
+  
+  /* ========== CARDS ========== */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  
+  .card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .card-body {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
+  
+  /* ========== BUTTONS ========== */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+    color: white;
+  }
+  
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+  }
+  
+  .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+  
+  .btn-secondary:hover {
+    background: var(--bg-card);
+    border-color: var(--border-hover);
+  }
+  
+  .btn-danger {
+    background: var(--danger);
+    color: white;
+  }
+  
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+  
+  .btn-sm {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
+  }
+  
+  .btn-icon {
+    padding: 0.5rem;
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+  }
+  
+  /* ========== FORMS ========== */
+  .form-group {
+    margin-bottom: 1rem;
+  }
+  
+  .form-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 0.4rem;
+  }
+  
+  .form-input, .form-select, .form-textarea {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    transition: border-color 0.15s;
+  }
+  
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  
+  .form-textarea {
+    min-height: 120px;
+    resize: vertical;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+  }
+  
+  /* ========== LISTS ========== */
+  .list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+  }
+  
+  .list-item-content {
+    flex: 1;
+  }
+  
+  .list-item-title {
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+  
+  .list-item-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .list-item-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  /* ========== CODE BLOCKS ========== */
+  .code-block {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+  }
+  
+  .code-block pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: pre;
+    margin: 0;
+  }
+  
+  /* ========== TABS ========== */
+  .tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+  }
+  
+  .tab {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  
+  .tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-card);
+  }
+  
+  .tab.active {
+    color: var(--accent);
+    background: rgba(255, 107, 53, 0.1);
+  }
+  
+  /* ========== ALERTS ========== */
+  .alert {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+  
+  .alert-success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: var(--success);
+  }
+  
+  .alert-info {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: var(--info);
+  }
+  
+  .alert-warning {
+    background: rgba(247, 201, 72, 0.1);
+    border: 1px solid rgba(247, 201, 72, 0.3);
+    color: var(--accent-secondary);
+  }
+  
+  /* ========== FOOTER ========== */
+  .footer {
+    padding: 1.5rem;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    margin-top: 2rem;
+  }
+  
+  .footer-text {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+  
+  .version-info {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.7rem;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  
+  .version-info .version { color: var(--success); }
+  .version-info .commit { color: #8b5cf6; }
+  
+  /* ========== UTILITIES ========== */
+  .hidden { display: none !important; }
+  .text-success { color: var(--success); }
+  .text-danger { color: var(--danger); }
+  .text-muted { color: var(--text-muted); }
+  .mt-1 { margin-top: 0.5rem; }
+  .mt-2 { margin-top: 1rem; }
+  .mb-1 { margin-bottom: 0.5rem; }
+  .mb-2 { margin-bottom: 1rem; }
+  .flex { display: flex; }
+  .flex-col { flex-direction: column; }
+  .gap-1 { gap: 0.5rem; }
+  .gap-2 { gap: 1rem; }
+  .items-center { align-items: center; }
+  .justify-between { justify-content: space-between; }
+  
+  /* ========== RESPONSIVE ========== */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main-content { margin-left: 0; }
+    .navbar { display: none; }
+  }
+`;
+
+const footerHtml = `
+<footer class="footer">
+  <p class="footer-text">Moodle MCP · Built for educators, by educators</p>
+  <div class="version-info">
+    <span class="version">v${versionInfo.version}</span>
+    <span>·</span>
+    <span class="commit" title="Commit: ${versionInfo.commitFull}">${versionInfo.commit}</span>
+    ${versionInfo.buildDate ? `<span>·</span><span>${new Date(versionInfo.buildDate).toLocaleDateString()}</span>` : ''}
+  </div>
+</footer>
+`;
+
 // Landing page HTML
 app.get('/', (c) => {
   const accessToken = getCookie(c, 'access_token');
@@ -339,34 +876,240 @@ app.get('/', (c) => {
     return c.redirect('/dashboard');
   }
   
-  // Generate dynamic buttons based on configuration
-  const navButtons = [];
-  const heroButtons = [];
-  
+  // Generate sign-in button
+  let signInButton = '';
   if (hasGoogleOAuth) {
-    navButtons.push('<a href="/auth/google" class="btn btn-primary">Sign in with Google</a>');
-    heroButtons.push('<a href="/auth/google" class="btn btn-primary">Get Started Free</a>');
+    signInButton = '<a href="/auth/google" class="btn btn-primary">Sign in with Google</a>';
+  } else if (isDevMode) {
+    signInButton = '<a href="/dev" class="btn btn-primary">🔧 Dev Login</a>';
   } else {
-    navButtons.push('<span class="btn btn-primary" style="opacity:0.5;cursor:not-allowed;" title="Google OAuth not configured">Sign in with Google</span>');
+    signInButton = '<span class="btn btn-secondary" style="opacity:0.5;cursor:not-allowed;">Sign in unavailable</span>';
   }
   
-  if (isDevMode) {
-    navButtons.push('<a href="/dev" class="btn btn-secondary">🔧 Dev Login</a>');
-    heroButtons.push('<a href="/dev" class="btn btn-secondary">🔧 Dev Login</a>');
-  }
+  return c.html(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moodle MCP - AI-Powered Moodle Access</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    ${sharedStyles}
+    
+    .hero {
+      min-height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 4rem 2rem;
+      background: 
+        radial-gradient(ellipse at 30% 20%, rgba(255,107,53,0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 80%, rgba(247,201,72,0.08) 0%, transparent 50%);
+    }
+    
+    .hero h1 {
+      font-size: 3.5rem;
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 1.5rem;
+    }
+    
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin-bottom: 2rem;
+    }
+    
+    .hero-buttons {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+    
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      max-width: 1000px;
+      padding: 0 2rem;
+    }
+    
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: left;
+      transition: all 0.2s;
+    }
+    
+    .feature-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 0.75rem;
+    }
+    
+    .feature-card h3 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .feature-card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+    
+    .section {
+      padding: 4rem 2rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    
+    .section-title {
+      font-size: 2rem;
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+    }
+    
+    .step {
+      text-align: center;
+    }
+    
+    .step-number {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      margin: 0 auto 1rem;
+    }
+    
+    .step h3 { margin-bottom: 0.5rem; }
+    .step p { color: var(--text-secondary); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <a href="/" class="logo">🎓 Moodle<span>MCP</span></a>
+      <nav class="navbar">
+        <a href="#features" class="nav-link">Features</a>
+        <a href="#ferpa" class="nav-link">FERPA Compliance</a>
+        <a href="#how-it-works" class="nav-link">How it Works</a>
+      </nav>
+    </div>
+    <div class="header-right">
+      ${signInButton}
+    </div>
+  </header>
   
-  if (heroButtons.length === 0) {
-    heroButtons.push('<span class="btn btn-primary" style="opacity:0.5;cursor:not-allowed;">No login methods configured</span>');
-  }
-  
-  heroButtons.push('<a href="#how-it-works" class="btn btn-secondary">Learn More</a>');
-  
-  // Inject buttons into template
-  const pageHtml = landingPageHtml
-    .replace('<!-- NAV_BUTTONS -->', navButtons.join('\n        '))
-    .replace('<!-- HERO_BUTTONS -->', heroButtons.join('\n        '));
-  
-  return c.html(pageHtml);
+  <main class="main-content no-sidebar centered">
+    <section class="hero">
+      <h1>Use AI to <span>Navigate Moodle</span></h1>
+      <p>Connect Claude, ChatGPT, Cursor, or any AI assistant to your Moodle courses. Create content, manage assignments, and interact with your LMS using natural language.</p>
+      <div class="hero-buttons">
+        ${signInButton}
+        <a href="#how-it-works" class="btn btn-secondary">Learn More</a>
+      </div>
+    </section>
+    
+    <section id="features" class="section">
+      <h2 class="section-title">Features</h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🔐</div>
+          <h3>FERPA Compliant</h3>
+          <p>Student names are automatically masked before reaching AI services. The AI never sees real student data.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3>Secure by Design</h3>
+          <p>Your Moodle credentials never leave your browser. The server only routes commands.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3>Works with Any Moodle</h3>
+          <p>SSO, LDAP, or standard auth—if you can log in, you can use it with AI.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3>AI Client Agnostic</h3>
+          <p>Works with Claude Desktop, ChatGPT, Cursor, and any MCP-compatible AI.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📚</div>
+          <h3>Course Management</h3>
+          <p>Create content, set up assignments, manage grades—all through conversation.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>Real-Time Sync</h3>
+          <p>Browser extension maintains live connection. Actions execute instantly.</p>
+        </div>
+      </div>
+    </section>
+    
+    <section id="ferpa" class="section">
+      <div class="alert alert-success">
+        <strong>🔒 Student Privacy Protected</strong>
+        <p class="mt-1">Student PII is masked before it reaches any AI service. Names like "John Smith" become "M12345_name" — the AI never sees real student data. <a href="https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/FERPA-COMPLIANCE.md">Read our FERPA compliance documentation →</a></p>
+      </div>
+    </section>
+    
+    <section id="how-it-works" class="section">
+      <h2 class="section-title">How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">1</div>
+          <h3>Sign Up</h3>
+          <p>Create an account with Google and get your API key.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">2</div>
+          <h3>Install Extension</h3>
+          <p>Add the browser extension and sign in.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">3</div>
+          <h3>Configure AI</h3>
+          <p>Add the MCP server to your AI client.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
+          <h3>Start Using</h3>
+          <p>Log into Moodle and start talking to AI!</p>
+        </div>
+      </div>
+    </section>
+    
+    ${footerHtml}
+  </main>
+</body>
+</html>
+  `);
 });
 
 // Dashboard page
@@ -390,18 +1133,7 @@ app.get('/dashboard', async (c) => {
     }
     
     // Return dashboard with user info injected
-    const dashboardWithUser = dashboardPageHtml.replace(
-      '<!-- USER_INFO_PLACEHOLDER -->',
-      `<div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
-        ${user.picture ? `<img src="${user.picture}" alt="Profile" style="width: 48px; height: 48px; border-radius: 50%;">` : ''}
-        <div>
-          <div style="font-weight: 600; font-size: 1.1rem;">${user.name || 'User'}</div>
-          <div style="color: #a0a0b0; font-size: 0.9rem;">${user.email}</div>
-        </div>
-        <a href="/auth/logout" style="margin-left: auto; color: #ef4444; text-decoration: none; font-size: 0.9rem;">Sign Out</a>
-      </div>`
-    );
-    return c.html(dashboardWithUser);
+    return c.html(dashboardPageHtml(user));
   } catch (error) {
     // Token invalid, clear and redirect
     deleteCookie(c, 'access_token');
@@ -409,6 +1141,675 @@ app.get('/dashboard', async (c) => {
     return c.redirect('/');
   }
 });
+
+// Dashboard page HTML generator
+function dashboardPageHtml(user: { name: string | null; email: string; picture: string | null }) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Moodle MCP</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    ${sharedStyles}
+    
+    .pii-tool-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    
+    @media (max-width: 768px) {
+      .pii-tool-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-left">
+      <a href="/dashboard" class="logo">🎓 Moodle<span>MCP</span></a>
+      <nav class="navbar">
+        <a href="#features" class="nav-link">Features</a>
+        <a href="#ferpa" class="nav-link">FERPA Compliance</a>
+        <a href="#how-it-works" class="nav-link">How it Works</a>
+      </nav>
+    </div>
+    <div class="header-right">
+      <div id="browser-status" class="browser-status disconnected">
+        <span>●</span> <span id="browser-status-text">Disconnected</span>
+      </div>
+      <div class="user-menu" onclick="toggleUserDropdown()">
+        ${user.picture ? `<img src="${user.picture}" alt="Profile" class="user-avatar">` : '<span class="user-avatar" style="background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;">'+((user.name || user.email)[0].toUpperCase())+'</span>'}
+        <span class="user-name">${user.name || user.email}</span>
+      </div>
+      <a href="/auth/logout" class="btn btn-secondary btn-sm">Sign Out</a>
+    </div>
+  </header>
+  
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">Integration</div>
+      <div class="sidebar-item active" onclick="showSection('browser-extension')">
+        <span class="sidebar-item-icon">🔌</span>
+        Browser Extension
+      </div>
+      <div class="sidebar-item" onclick="showSection('ai-agent')">
+        <span class="sidebar-item-icon">🤖</span>
+        AI Agent
+      </div>
+    </div>
+    
+    <div class="sidebar-section">
+      <div class="sidebar-title">PII Tools</div>
+      <div class="sidebar-item" onclick="showSection('mask-unmask')">
+        <span class="sidebar-item-icon">🔄</span>
+        Online Mask/Unmask
+      </div>
+    </div>
+  </aside>
+  
+  <main class="main-content">
+    <!-- BROWSER EXTENSION SECTION -->
+    <section id="section-browser-extension">
+      <div class="page-header">
+        <h1 class="page-title">Browser Extension</h1>
+        <p class="page-description">Connect your browser to enable AI interactions with Moodle.</p>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">📡 Connection Status</h3>
+          <div id="extension-status" class="browser-status disconnected">
+            <span>●</span> <span>Disconnected</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <p>The browser extension connects your Moodle session to the MCP server. Once connected, AI assistants can interact with your courses.</p>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">📥 Download & Install</h3>
+        </div>
+        <div class="card-body">
+          <p class="mb-2">Install the browser extension to get started:</p>
+          <ol style="padding-left: 1.5rem; color: var(--text-secondary);">
+            <li>Download the <code>browser-extension</code> folder from the project</li>
+            <li>Open Chrome and go to <code>chrome://extensions/</code></li>
+            <li>Enable "Developer mode" (toggle in top right)</li>
+            <li>Click "Load unpacked" and select the folder</li>
+            <li>Click the extension icon and sign in</li>
+          </ol>
+          <div class="mt-2">
+            <a href="https://github.com/arunlakhotia/moodle-mcp/tree/main/browser-extension" target="_blank" class="btn btn-primary">
+              📦 Download Extension
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- AI AGENT SECTION -->
+    <section id="section-ai-agent" class="hidden">
+      <div class="page-header">
+        <h1 class="page-title">AI Agent Configuration</h1>
+        <p class="page-description">Connect your AI client to Moodle MCP.</p>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">🔑 API Keys</h3>
+          <button class="btn btn-primary btn-sm" onclick="createApiKey()">+ Create Key</button>
+        </div>
+        <div id="api-keys-list" class="card-body">
+          <p class="text-muted">Loading...</p>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">⚙️ MCP Configuration</h3>
+        </div>
+        <div class="card-body">
+          <div class="tabs">
+            <div class="tab active" onclick="showConfig('cursor')">Cursor IDE</div>
+            <div class="tab" onclick="showConfig('claude')">Claude Desktop</div>
+            <div class="tab" onclick="showConfig('chatgpt')">ChatGPT</div>
+          </div>
+          
+          <div class="code-block">
+            <pre id="mcp-config"></pre>
+          </div>
+          
+          <div id="config-note" class="alert alert-info mt-2">
+            <strong>Note:</strong> Cursor requires the mcp-remote bridge. 
+            <a href="https://github.com/arunlakhotia/moodle-mcp/tree/main/mcp-remote" target="_blank">Download it here</a>, 
+            then update the path in the config.
+          </div>
+          
+          <div class="mt-2 flex gap-1">
+            <button class="btn btn-secondary" onclick="copyConfig()">📋 Copy Configuration</button>
+            <button class="btn btn-secondary" onclick="downloadConfig()">⬇️ Download Config File</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- MASK/UNMASK SECTION -->
+    <section id="section-mask-unmask" class="hidden">
+      <div class="page-header">
+        <h1 class="page-title">Online Mask/Unmask</h1>
+        <p class="page-description">Convert between masked tokens and real names.</p>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">📁 Uploaded Files</h3>
+          <button class="btn btn-secondary btn-sm" onclick="loadFiles()">🔄 Refresh</button>
+        </div>
+        <div id="files-list" class="card-body">
+          <p class="text-muted">Loading...</p>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">📤 Upload File</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Course</label>
+            <select id="file-course-select" class="form-select">
+              <option value="">-- Select a course --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">File (CSV, TXT, DOCX, XLSX, PPTX)</label>
+            <input type="file" id="upload-file" class="form-input" accept=".csv,.txt,.tsv,.docx,.xlsx,.pptx">
+          </div>
+          <div class="flex gap-1">
+            <button class="btn btn-primary" onclick="uploadAndUnmask()">📤 Upload & Unmask on Download</button>
+            <button class="btn btn-secondary" onclick="uploadAndMask()">🔒 Upload & Mask</button>
+          </div>
+          <div id="upload-status" class="mt-1"></div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">🔄 Text Mask/Unmask</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Course</label>
+            <select id="pii-course-select" class="form-select">
+              <option value="">-- Select a course --</option>
+            </select>
+          </div>
+          
+          <div class="pii-tool-grid">
+            <div class="form-group">
+              <label class="form-label">Masked Text (with tokens)</label>
+              <textarea id="masked-text" class="form-textarea" placeholder="M12345_name submitted the assignment..."></textarea>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Unmasked Text (with names)</label>
+              <textarea id="unmasked-text" class="form-textarea" placeholder="John Smith submitted the assignment..."></textarea>
+            </div>
+          </div>
+          
+          <div class="flex gap-1 justify-between">
+            <div class="flex gap-1">
+              <button class="btn btn-secondary" onclick="unmaskText()">← Unmask</button>
+              <button class="btn btn-primary" onclick="maskText()">Mask →</button>
+            </div>
+            <div class="flex gap-1">
+              <button class="btn btn-secondary btn-sm" onclick="copyMasked()">📋 Copy Masked</button>
+              <button class="btn btn-secondary btn-sm" onclick="copyUnmasked()">📋 Copy Unmasked</button>
+            </div>
+          </div>
+          <div id="pii-status" class="mt-1"></div>
+        </div>
+      </div>
+    </section>
+    
+    ${footerHtml}
+  </main>
+  
+  <script>
+    // ==================== STATE ====================
+    let currentSection = 'browser-extension';
+    let currentConfigType = 'cursor';
+    let serverUrl = window.location.origin;
+    let userApiKey = 'YOUR_API_KEY';
+    
+    // ==================== SECTION NAVIGATION ====================
+    function showSection(section) {
+      // Hide all sections
+      document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
+      // Show selected section
+      document.getElementById('section-' + section).classList.remove('hidden');
+      
+      // Update sidebar
+      document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+      event.target.closest('.sidebar-item').classList.add('active');
+      
+      currentSection = section;
+      
+      // Load section-specific data
+      if (section === 'ai-agent') loadApiKeys();
+      if (section === 'mask-unmask') { loadFiles(); loadCourses(); }
+    }
+    
+    // ==================== BROWSER STATUS ====================
+    async function checkBrowserStatus() {
+      try {
+        const res = await fetch('/auth/browser-status');
+        const data = await res.json();
+        
+        const headerStatus = document.getElementById('browser-status');
+        const headerText = document.getElementById('browser-status-text');
+        const extStatus = document.getElementById('extension-status');
+        
+        if (data.connected) {
+          headerStatus.className = 'browser-status connected';
+          headerText.textContent = 'Connected';
+          if (extStatus) {
+            extStatus.className = 'browser-status connected';
+            extStatus.innerHTML = '<span>●</span> <span>Connected</span>';
+          }
+        } else {
+          headerStatus.className = 'browser-status disconnected';
+          headerText.textContent = 'Disconnected';
+          if (extStatus) {
+            extStatus.className = 'browser-status disconnected';
+            extStatus.innerHTML = '<span>●</span> <span>Disconnected</span>';
+          }
+        }
+      } catch (e) {
+        console.error('Error checking browser status:', e);
+      }
+    }
+    
+    // ==================== API KEYS ====================
+    async function loadApiKeys() {
+      try {
+        const res = await fetch('/api/keys');
+        const { keys } = await res.json();
+        
+        const list = document.getElementById('api-keys-list');
+        if (!keys || keys.length === 0) {
+          list.innerHTML = '<p class="text-muted">No API keys yet. Create one to get started.</p>';
+          return;
+        }
+        
+        list.innerHTML = keys.map(key => \`
+          <div class="list-item">
+            <div class="list-item-content">
+              <div class="list-item-title">\${key.name}</div>
+              <div class="list-item-subtitle">\${key.keyPrefix}...</div>
+            </div>
+            <div class="list-item-actions">
+              <button class="btn btn-danger btn-sm" onclick="revokeKey('\${key.id}')">Revoke</button>
+            </div>
+          </div>
+        \`).join('');
+      } catch (error) {
+        console.error('Error loading API keys:', error);
+      }
+    }
+    
+    async function createApiKey() {
+      const name = prompt('Enter a name for this API key (e.g., "My Laptop", "Work PC"):');
+      if (!name) return;
+      
+      try {
+        const res = await fetch('/api/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        
+        const data = await res.json();
+        if (data.key) {
+          userApiKey = data.key;
+          showApiKeyModal(data.key);
+          showConfig(currentConfigType);
+          loadApiKeys();
+        } else {
+          alert('Error: ' + (data.error || 'Failed to create key'));
+        }
+      } catch (error) {
+        alert('Error creating API key');
+      }
+    }
+    
+    function showApiKeyModal(key) {
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:1000;';
+      modal.innerHTML = \`
+        <div class="card" style="max-width:500px;width:90%;">
+          <h3 class="text-success mb-2">✓ API Key Created!</h3>
+          <p class="text-muted mb-2">Save this key now - it will not be shown again!</p>
+          <div class="code-block mb-2">
+            <pre style="word-break:break-all;white-space:pre-wrap;user-select:all;">\${key}</pre>
+          </div>
+          <div class="flex gap-1">
+            <button onclick="navigator.clipboard.writeText('\${key}');this.textContent='Copied!';this.className='btn btn-secondary';" class="btn btn-primary" style="flex:1;">📋 Copy Key</button>
+            <button onclick="this.closest('[style*=\\"position:fixed\\"]').remove();" class="btn btn-secondary" style="flex:1;">Close</button>
+          </div>
+        </div>
+      \`;
+      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+      document.body.appendChild(modal);
+    }
+    
+    async function revokeKey(keyId) {
+      if (!confirm('Are you sure you want to revoke this API key?')) return;
+      try {
+        await fetch('/api/keys/' + keyId, { method: 'DELETE' });
+        loadApiKeys();
+      } catch (error) {
+        alert('Error revoking key');
+      }
+    }
+    
+    // ==================== MCP CONFIG ====================
+    function showConfig(type) {
+      currentConfigType = type;
+      const configEl = document.getElementById('mcp-config');
+      const noteEl = document.getElementById('config-note');
+      
+      // Update tabs
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event?.target?.classList.add('active');
+      
+      if (type === 'cursor') {
+        configEl.textContent = JSON.stringify({
+          mcpServers: {
+            moodle: {
+              command: "npx",
+              args: ["tsx", "/path/to/mcp-remote/src/index.ts"],
+              env: {
+                MCP_SERVER_URL: serverUrl,
+                MCP_API_KEY: userApiKey
+              }
+            }
+          }
+        }, null, 2);
+        noteEl.innerHTML = '<strong>Note:</strong> Cursor requires the <a href="https://github.com/arunlakhotia/moodle-mcp/tree/main/mcp-remote" target="_blank">mcp-remote bridge</a>. Download it and update the path in the config.';
+        noteEl.className = 'alert alert-info mt-2';
+      } else if (type === 'claude') {
+        configEl.textContent = JSON.stringify({
+          mcpServers: {
+            moodle: {
+              transport: { type: "sse", url: serverUrl + "/mcp/sse" },
+              headers: { Authorization: "Bearer " + userApiKey }
+            }
+          }
+        }, null, 2);
+        noteEl.innerHTML = '<strong>Config location:</strong><br>macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br>Windows: <code>%APPDATA%\\\\Claude\\\\claude_desktop_config.json</code>';
+        noteEl.className = 'alert alert-info mt-2';
+      } else if (type === 'chatgpt') {
+        configEl.textContent = JSON.stringify({
+          name: "Moodle MCP",
+          type: "mcp",
+          mcp: {
+            transport: { type: "sse", url: serverUrl + "/mcp/sse" },
+            headers: { Authorization: "Bearer " + userApiKey }
+          }
+        }, null, 2);
+        noteEl.innerHTML = '<strong>ChatGPT Setup:</strong> Use the MCP plugin settings in ChatGPT to add this configuration. OAuth authentication is also supported.';
+        noteEl.className = 'alert alert-info mt-2';
+      }
+    }
+    
+    function copyConfig() {
+      navigator.clipboard.writeText(document.getElementById('mcp-config').textContent);
+      alert('Configuration copied!');
+    }
+    
+    function downloadConfig() {
+      const config = document.getElementById('mcp-config').textContent;
+      const filename = currentConfigType === 'cursor' ? 'mcp.json' : 'claude_desktop_config.json';
+      const blob = new Blob([config], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    
+    // ==================== FILES ====================
+    async function loadCourses() {
+      try {
+        const res = await fetch('/files/courses');
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const selectors = ['file-course-select', 'pii-course-select'].map(id => document.getElementById(id)).filter(Boolean);
+        
+        selectors.forEach(select => {
+          select.innerHTML = '<option value="">-- Select a course --</option>';
+          if (data.courses) {
+            data.courses.forEach(course => {
+              const option = document.createElement('option');
+              option.value = course.id;
+              option.textContent = course.name;
+              select.appendChild(option);
+            });
+          }
+        });
+      } catch (error) {
+        console.log('Error loading courses:', error);
+      }
+    }
+    
+    async function loadFiles() {
+      const list = document.getElementById('files-list');
+      try {
+        const res = await fetch('/files/list');
+        if (!res.ok) {
+          list.innerHTML = '<p class="text-muted">Could not load files</p>';
+          return;
+        }
+        
+        const data = await res.json();
+        if (!data.files || data.files.length === 0) {
+          list.innerHTML = '<p class="text-muted">No files available</p>';
+          return;
+        }
+        
+        list.innerHTML = data.files.map(file => {
+          const expiresIn = Math.round(file.time_remaining_ms / 60000);
+          const isExpiring = expiresIn < 15;
+          return \`
+            <div class="list-item">
+              <div class="list-item-content">
+                <div class="list-item-title">\${file.filename} \${file.is_downloaded ? '<span class="text-success">✓</span>' : ''}</div>
+                <div class="list-item-subtitle">Course: \${file.course_id} · <span class="\${isExpiring ? 'text-danger' : ''}">Expires in \${expiresIn} min</span></div>
+              </div>
+              <div class="list-item-actions">
+                <a href="/files/\${file.id}" class="btn btn-primary btn-sm" download>⬇ Download</a>
+                <button class="btn btn-danger btn-sm" onclick="deleteFile('\${file.id}')">🗑</button>
+              </div>
+            </div>
+          \`;
+        }).join('');
+      } catch (error) {
+        list.innerHTML = '<p class="text-danger">Error loading files</p>';
+      }
+    }
+    
+    async function deleteFile(fileId) {
+      if (!confirm('Delete this file?')) return;
+      try {
+        await fetch('/files/' + fileId, { method: 'DELETE' });
+        loadFiles();
+      } catch (error) {
+        alert('Error deleting file');
+      }
+    }
+    
+    async function uploadAndUnmask() {
+      const fileInput = document.getElementById('upload-file');
+      const courseId = parseInt(document.getElementById('file-course-select').value, 10);
+      const statusDiv = document.getElementById('upload-status');
+      
+      const file = fileInput.files[0];
+      if (!file) { statusDiv.innerHTML = '<span class="text-danger">Please select a file</span>'; return; }
+      if (!courseId) { statusDiv.innerHTML = '<span class="text-danger">Please select a course</span>'; return; }
+      
+      statusDiv.innerHTML = '<span class="text-muted">Uploading...</span>';
+      
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target.result.split(',')[1];
+        try {
+          const res = await fetch('/files/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: base64, filename: file.name, course_id: courseId, is_base64: true })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            statusDiv.innerHTML = '<span class="text-success">✓ Uploaded! <a href="' + data.download_url + '" download>Download unmasked file</a></span>';
+            fileInput.value = '';
+            loadFiles();
+          } else {
+            const err = await res.json();
+            statusDiv.innerHTML = '<span class="text-danger">Error: ' + (err.error || 'Upload failed') + '</span>';
+          }
+        } catch (error) {
+          statusDiv.innerHTML = '<span class="text-danger">Error: ' + error.message + '</span>';
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+    
+    async function uploadAndMask() {
+      const fileInput = document.getElementById('upload-file');
+      const courseId = parseInt(document.getElementById('file-course-select').value, 10);
+      const statusDiv = document.getElementById('upload-status');
+      
+      const file = fileInput.files[0];
+      if (!file) { statusDiv.innerHTML = '<span class="text-danger">Please select a file</span>'; return; }
+      if (!courseId) { statusDiv.innerHTML = '<span class="text-danger">Please select a course</span>'; return; }
+      
+      statusDiv.innerHTML = '<span class="text-muted">Masking file...</span>';
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('course_id', courseId.toString());
+      
+      try {
+        const res = await fetch('/files/mask', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'masked-' + file.name;
+          a.click();
+          URL.revokeObjectURL(url);
+          statusDiv.innerHTML = '<span class="text-success">✓ File masked and downloaded</span>';
+          fileInput.value = '';
+        } else {
+          const err = await res.json();
+          statusDiv.innerHTML = '<span class="text-danger">Error: ' + err.error + '</span>';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = '<span class="text-danger">Error: ' + error.message + '</span>';
+      }
+    }
+    
+    // ==================== PII MASK/UNMASK ====================
+    async function maskText() {
+      const input = document.getElementById('unmasked-text').value;
+      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
+      const statusDiv = document.getElementById('pii-status');
+      
+      if (!input.trim()) { statusDiv.innerHTML = '<span class="text-danger">Please enter text to mask</span>'; return; }
+      if (!courseId) { statusDiv.innerHTML = '<span class="text-danger">Please select a course</span>'; return; }
+      
+      statusDiv.innerHTML = '<span class="text-muted">Masking...</span>';
+      
+      try {
+        const res = await fetch('/api/pii/mask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: input, course_id: courseId })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('masked-text').value = data.masked;
+          statusDiv.innerHTML = '<span class="text-success">✓ Masked: ' + data.stats.names + ' names, ' + data.stats.emails + ' emails, ' + data.stats.ids + ' IDs</span>';
+        } else {
+          statusDiv.innerHTML = '<span class="text-danger">Error: ' + data.error + '</span>';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = '<span class="text-danger">Error: ' + error.message + '</span>';
+      }
+    }
+    
+    async function unmaskText() {
+      const input = document.getElementById('masked-text').value;
+      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
+      const statusDiv = document.getElementById('pii-status');
+      
+      if (!input.trim()) { statusDiv.innerHTML = '<span class="text-danger">Please enter text to unmask</span>'; return; }
+      if (!courseId) { statusDiv.innerHTML = '<span class="text-danger">Please select a course</span>'; return; }
+      
+      statusDiv.innerHTML = '<span class="text-muted">Unmasking...</span>';
+      
+      try {
+        const res = await fetch('/api/pii/unmask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: input, course_id: courseId })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('unmasked-text').value = data.unmasked;
+          statusDiv.innerHTML = '<span class="text-success">✓ Unmasked: ' + data.stats.names + ' names, ' + data.stats.emails + ' emails, ' + data.stats.ids + ' IDs</span>';
+        } else {
+          statusDiv.innerHTML = '<span class="text-danger">Error: ' + data.error + '</span>';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = '<span class="text-danger">Error: ' + error.message + '</span>';
+      }
+    }
+    
+    function copyMasked() {
+      const text = document.getElementById('masked-text').value;
+      if (text) { navigator.clipboard.writeText(text); document.getElementById('pii-status').innerHTML = '<span class="text-success">✓ Copied masked text</span>'; }
+    }
+    
+    function copyUnmasked() {
+      const text = document.getElementById('unmasked-text').value;
+      if (text) { navigator.clipboard.writeText(text); document.getElementById('pii-status').innerHTML = '<span class="text-success">✓ Copied unmasked text</span>'; }
+    }
+    
+    // ==================== INIT ====================
+    checkBrowserStatus();
+    setInterval(checkBrowserStatus, 10000);
+    showConfig('cursor');
+  </script>
+</body>
+</html>
+`;
+}
 
 // Start server
 const port = parseInt(process.env.PORT || '3000');
@@ -440,1375 +1841,3 @@ Environment:
 - DATABASE_URL: ${process.env.DATABASE_URL ? '✓ configured' : '✗ missing'}
 - GOOGLE_CLIENT_ID: ${process.env.GOOGLE_CLIENT_ID ? '✓ configured' : '✗ missing'}
 `);
-
-// Landing page HTML template
-const landingPageHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Moodle MCP - AI-Powered Moodle Access</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-primary: #0a0a0f;
-      --bg-secondary: #12121a;
-      --bg-card: #1a1a24;
-      --text-primary: #f0f0f5;
-      --text-secondary: #a0a0b0;
-      --accent: #ff6b35;
-      --accent-secondary: #f7c948;
-      --success: #10b981;
-      --border: rgba(255,255,255,0.1);
-    }
-    
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    
-    body {
-      font-family: 'Space Grotesk', sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
-    
-    .bg-pattern {
-      position: fixed;
-      inset: 0;
-      background: 
-        radial-gradient(ellipse at 20% 20%, rgba(255,107,53,0.15) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 80%, rgba(247,201,72,0.1) 0%, transparent 50%),
-        radial-gradient(circle at 50% 50%, rgba(255,255,255,0.02) 0%, transparent 100%);
-      pointer-events: none;
-    }
-    
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 2rem;
-      position: relative;
-      z-index: 1;
-    }
-    
-    header {
-      padding: 2rem 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    
-    .logo {
-      font-size: 1.5rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .logo span {
-      color: var(--accent);
-    }
-    
-    .nav-links {
-      display: flex;
-      gap: 2rem;
-      align-items: center;
-    }
-    
-    .nav-links a {
-      color: var(--text-secondary);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-    
-    .nav-links a:hover {
-      color: var(--text-primary);
-    }
-    
-    .btn {
-      padding: 0.75rem 1.5rem;
-      border-radius: 8px;
-      font-weight: 500;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      transition: all 0.2s;
-      cursor: pointer;
-      border: none;
-      font-family: inherit;
-      font-size: 1rem;
-    }
-    
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent), #ff8c5a);
-      color: white;
-    }
-    
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 30px rgba(255,107,53,0.3);
-    }
-    
-    .btn-secondary {
-      background: var(--bg-card);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-    }
-    
-    .btn-secondary:hover {
-      background: var(--bg-secondary);
-    }
-    
-    .hero {
-      padding: 6rem 0;
-      text-align: center;
-    }
-    
-    .hero h1 {
-      font-size: 4rem;
-      font-weight: 700;
-      line-height: 1.1;
-      margin-bottom: 1.5rem;
-    }
-    
-    .hero h1 span {
-      background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    
-    .hero p {
-      font-size: 1.25rem;
-      color: var(--text-secondary);
-      max-width: 600px;
-      margin: 0 auto 2rem;
-    }
-    
-    .hero-buttons {
-      display: flex;
-      gap: 1rem;
-      justify-content: center;
-    }
-    
-    .features {
-      padding: 4rem 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 2rem;
-    }
-    
-    .feature-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 2rem;
-      transition: all 0.3s;
-    }
-    
-    .feature-card:hover {
-      transform: translateY(-5px);
-      border-color: var(--accent);
-    }
-    
-    .feature-icon {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-    }
-    
-    .feature-card h3 {
-      font-size: 1.25rem;
-      margin-bottom: 0.75rem;
-    }
-    
-    .feature-card p {
-      color: var(--text-secondary);
-      line-height: 1.6;
-    }
-    
-    .how-it-works {
-      padding: 4rem 0;
-    }
-    
-    .how-it-works h2 {
-      text-align: center;
-      font-size: 2.5rem;
-      margin-bottom: 3rem;
-    }
-    
-    .steps {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 2rem;
-    }
-    
-    .step {
-      text-align: center;
-      padding: 2rem;
-    }
-    
-    .step-number {
-      width: 50px;
-      height: 50px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 1.25rem;
-      margin: 0 auto 1rem;
-    }
-    
-    .step h3 {
-      margin-bottom: 0.5rem;
-    }
-    
-    .step p {
-      color: var(--text-secondary);
-    }
-    
-    .code-block {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-      margin: 2rem 0;
-      overflow-x: auto;
-    }
-    
-    .code-block pre {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.875rem;
-      color: var(--text-secondary);
-    }
-    
-    footer {
-      padding: 3rem 0;
-      text-align: center;
-      color: var(--text-secondary);
-      border-top: 1px solid var(--border);
-      margin-top: 4rem;
-    }
-    footer .version-info {
-      display: flex;
-      justify-content: center;
-      gap: 0.5rem;
-      margin-top: 0.5rem;
-      font-size: 0.75rem;
-      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-    }
-    footer .version-info .version {
-      color: #10b981;
-    }
-    footer .version-info .separator {
-      color: var(--text-secondary);
-    }
-    footer .version-info .commit {
-      color: #8b5cf6;
-      cursor: help;
-    }
-    footer .version-info .build-date {
-      color: #6b7280;
-    }
-  </style>
-</head>
-<body>
-  <div class="bg-pattern"></div>
-  
-  <div class="container">
-    <header>
-      <div class="logo">
-        🎓 Moodle<span>MCP</span>
-      </div>
-      <nav class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#how-it-works">How it Works</a>
-        <a href="/docs">Documentation</a>
-        <!-- NAV_BUTTONS -->
-      </nav>
-    </header>
-    
-    <section class="hero">
-      <h1>Use AI to <span>Navigate Moodle</span></h1>
-      <p>Connect Claude, ChatGPT, Cursor, or any AI assistant to your Moodle courses. Create content, manage assignments, and interact with your LMS using natural language.</p>
-      <div class="hero-buttons">
-        <!-- HERO_BUTTONS -->
-      </div>
-    </section>
-    
-    <section class="features" id="features">
-      <div class="feature-card">
-        <div class="feature-icon">🎓</div>
-        <h3>FERPA Compliant</h3>
-        <p>Student names are automatically masked before reaching AI services. <a href="/docs/FERPA-COMPLIANCE.md" style="color:var(--accent);">Learn how →</a></p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🔐</div>
-        <h3>Secure by Design</h3>
-        <p>Your Moodle credentials never leave your browser. The server only routes commands—all interactions happen locally.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🌐</div>
-        <h3>Works with Any Moodle</h3>
-        <p>Whether your institution uses SSO, LDAP, or standard auth—if you can log in, you can use it with AI.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🤖</div>
-        <h3>AI Client Agnostic</h3>
-        <p>Works with Claude Desktop, ChatGPT, Cursor, and any MCP-compatible AI assistant.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">📚</div>
-        <h3>Course Management</h3>
-        <p>Create Moodle Books, set up assignments, manage grades, and more—all through natural conversation.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">⚡</div>
-        <h3>Real-Time Sync</h3>
-        <p>Browser extension maintains live connection. Actions execute instantly in your logged-in session.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">🎨</div>
-        <h3>Rich Content</h3>
-        <p>Generate beautiful HTML content for your courses. The AI handles formatting and styling automatically.</p>
-      </div>
-    </section>
-    
-    <section class="how-it-works" id="how-it-works">
-      <h2>How It Works</h2>
-      <div class="steps">
-        <div class="step">
-          <div class="step-number">1</div>
-          <h3>Sign Up</h3>
-          <p>Create an account with Google. Get your API key instantly.</p>
-        </div>
-        <div class="step">
-          <div class="step-number">2</div>
-          <h3>Install Extension</h3>
-          <p>Add the browser extension and log in with your account.</p>
-        </div>
-        <div class="step">
-          <div class="step-number">3</div>
-          <h3>Configure AI</h3>
-          <p>Add the MCP server to your AI client configuration.</p>
-        </div>
-        <div class="step">
-          <div class="step-number">4</div>
-          <h3>Start Using</h3>
-          <p>Log into Moodle and start talking to your AI assistant!</p>
-        </div>
-      </div>
-      
-      <div class="code-block">
-        <pre>// Add to your AI client's MCP configuration
-{
-  "mcpServers": {
-    "moodle": {
-      "transport": {
-        "type": "sse",
-        "url": "${process.env.SERVER_URL || 'https://moodle-mcp.example.com'}/mcp/sse"
-      },
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY"
-      }
-    }
-  }
-}</pre>
-      </div>
-    </section>
-    
-    <footer>
-      <p>Moodle MCP · Built for educators, by educators.</p>
-      <p style="margin-top: 0.5rem; font-size: 0.85rem;">
-        <a href="https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/FERPA-COMPLIANCE.md" style="color: #10b981; text-decoration: none;">🔒 FERPA Compliant</a>
-        <span style="color: var(--text-secondary);"> · </span>
-        <a href="https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/PRIVACY-QUICK-REFERENCE.md" style="color: var(--text-secondary); text-decoration: none;">Privacy</a>
-      </p>
-      <div class="version-info">
-        <span class="version">v${versionInfo.version}</span>
-        <span class="separator">·</span>
-        <span class="commit" title="Commit: ${versionInfo.commitFull}">${versionInfo.commit}</span>
-        ${versionInfo.buildDate ? `<span class="separator">·</span><span class="build-date" title="Build date">${new Date(versionInfo.buildDate).toLocaleDateString()}</span>` : ''}
-      </div>
-    </footer>
-  </div>
-</body>
-</html>
-`;
-
-// Dashboard page HTML template
-const dashboardPageHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard - Moodle MCP</title>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-primary: #0a0a0f;
-      --bg-secondary: #12121a;
-      --bg-card: #1a1a24;
-      --text-primary: #f0f0f5;
-      --text-secondary: #a0a0b0;
-      --accent: #ff6b35;
-      --accent-secondary: #f7c948;
-      --success: #10b981;
-      --danger: #ef4444;
-      --border: rgba(255,255,255,0.1);
-    }
-    
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    
-    body {
-      font-family: 'Space Grotesk', sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      min-height: 100vh;
-    }
-    
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 2rem;
-    }
-    
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 3rem;
-      padding-bottom: 1rem;
-      border-bottom: 1px solid var(--border);
-    }
-    
-    .logo {
-      font-size: 1.5rem;
-      font-weight: 700;
-    }
-    
-    .logo span { color: var(--accent); }
-    
-    .user-info {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    
-    .user-info img {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-    }
-    
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 2rem;
-      margin-bottom: 2rem;
-    }
-    
-    .card h2 {
-      font-size: 1.25rem;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    
-    .btn {
-      padding: 0.75rem 1.5rem;
-      border-radius: 8px;
-      font-weight: 500;
-      cursor: pointer;
-      border: none;
-      font-family: inherit;
-      font-size: 1rem;
-      transition: all 0.2s;
-    }
-    
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent), #ff8c5a);
-      color: white;
-    }
-    
-    .btn-primary:hover {
-      transform: translateY(-2px);
-    }
-    
-    .btn-danger {
-      background: var(--danger);
-      color: white;
-    }
-    
-    .btn-secondary {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-    }
-    
-    .api-key {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem;
-      background: var(--bg-secondary);
-      border-radius: 8px;
-      margin-bottom: 1rem;
-    }
-    
-    .api-key-value {
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-secondary);
-    }
-    
-    .code-block {
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1rem;
-      overflow-x: auto;
-    }
-    
-    .code-block pre {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.875rem;
-      color: var(--text-secondary);
-    }
-    
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.25rem 0.75rem;
-      border-radius: 100px;
-      font-size: 0.875rem;
-    }
-    
-    .status-connected {
-      background: rgba(16, 185, 129, 0.2);
-      color: var(--success);
-    }
-    
-    .status-disconnected {
-      background: rgba(239, 68, 68, 0.2);
-      color: var(--danger);
-    }
-    
-    #loading {
-      text-align: center;
-      padding: 4rem;
-      color: var(--text-secondary);
-    }
-    
-    .hidden { display: none; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div id="loading">Loading...</div>
-    
-    <div id="content" class="hidden">
-      <!-- USER_INFO_PLACEHOLDER -->
-      <header>
-        <div class="logo">🎓 Moodle<span>MCP</span></div>
-        <div class="user-info">
-          <span id="user-name"></span>
-          <img id="user-picture" src="" alt="Profile" />
-          <button class="btn btn-secondary" onclick="logout()">Logout</button>
-        </div>
-      </header>
-      
-      <div class="card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05)); border-color: rgba(16, 185, 129, 0.3);">
-        <h2 style="color: #10b981;">🔒 Student Privacy Protected</h2>
-        <p style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6;">
-          Moodle MCP automatically masks student PII before it reaches AI services. Names like <code style="background:var(--bg-secondary);padding:0.15rem 0.4rem;border-radius:4px;font-size:0.8rem;">John Smith</code> 
-          become <code style="background:var(--bg-secondary);padding:0.15rem 0.4rem;border-radius:4px;font-size:0.8rem;">M12345_name</code> — the AI never sees real student data.
-        </p>
-        <details style="margin-top: 0.75rem;">
-          <summary style="cursor: pointer; color: #10b981; font-size: 0.9rem;">📚 Learn more about FERPA compliance</summary>
-          <div style="margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.85rem;">
-            <p style="margin-bottom: 0.5rem;">✓ Student names masked before leaving your browser</p>
-            <p style="margin-bottom: 0.5rem;">✓ Server never stores student information</p>
-            <p style="margin-bottom: 0.5rem;">✓ AI services only see anonymous tokens</p>
-            <p style="margin-bottom: 0.5rem;">✓ Names restored only when posting to Moodle</p>
-            <a href="https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/FERPA-COMPLIANCE.md" 
-               target="_blank" style="color: var(--accent); text-decoration: none;">
-              Read full documentation →
-            </a>
-          </div>
-        </details>
-      </div>
-      
-      <div class="card">
-        <h2>🔌 Browser Extension Status</h2>
-        <p>Install the browser extension and log in to connect your Moodle session.</p>
-        <br />
-        <div id="browser-status">
-          <span class="status status-disconnected">● Disconnected</span>
-        </div>
-        <br />
-        <details style="margin-top: 1rem;">
-          <summary style="cursor: pointer; color: #f97316;">📦 Install Extension</summary>
-          <div style="margin-top: 0.75rem; padding: 1rem; background: var(--bg-secondary); border-radius: 8px;">
-            <p style="font-size: 0.9rem; margin-bottom: 0.75rem;"><strong>Option 1:</strong> Download from releases (coming soon)</p>
-            <p style="font-size: 0.9rem; margin-bottom: 0.75rem;"><strong>Option 2:</strong> Manual install:</p>
-            <ol style="padding-left: 1.5rem; font-size: 0.85rem; color: var(--text-secondary);">
-              <li>Get the <code>browser-extension</code> folder from the project</li>
-              <li>Open Chrome → <code>chrome://extensions/</code></li>
-              <li>Enable "Developer mode" (top right)</li>
-              <li>Click "Load unpacked" → select folder</li>
-              <li>Click extension icon and sign in</li>
-            </ol>
-          </div>
-        </details>
-      </div>
-      
-      <div class="card">
-        <h2>🔑 API Keys</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1rem;">Use API keys to authenticate your AI client with this service.</p>
-        
-        <div id="api-keys-list">
-          <!-- Keys will be loaded here -->
-        </div>
-        
-        <button class="btn btn-primary" onclick="createApiKey()">+ Create New Key</button>
-      </div>
-      
-      <div class="card">
-        <h2>⚙️ MCP Configuration</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1rem;">Choose your AI client:</p>
-        
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-          <button class="btn btn-secondary" onclick="showConfig('claude')" id="btn-claude" style="flex:1; opacity: 0.6;">Claude Desktop</button>
-          <button class="btn btn-secondary" onclick="showConfig('cursor')" id="btn-cursor" style="flex:1; background: var(--accent); opacity: 1;">Cursor IDE</button>
-        </div>
-        
-        <div class="code-block">
-          <pre id="mcp-config"></pre>
-        </div>
-        
-        <div id="cursor-note" style="margin-top: 1rem; padding: 0.75rem; background: rgba(255,107,53,0.1); border-radius: 8px; font-size: 0.85rem;">
-          <strong>Note:</strong> Cursor requires the <code>mcp-remote</code> bridge. 
-          <a href="https://github.com/arunlakhotia/moodle-mcp/tree/main/mcp-remote" target="_blank" style="color: var(--accent);">Download it here</a>, 
-          then update the path in the config above.
-        </div>
-        
-        <div id="claude-note" class="hidden" style="margin-top: 1rem; padding: 0.75rem; background: rgba(16,185,129,0.1); border-radius: 8px; font-size: 0.85rem;">
-          <strong>Config location:</strong><br/>
-          macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br/>
-          Windows: <code>%APPDATA%\\Claude\\claude_desktop_config.json</code>
-        </div>
-        
-        <br />
-        <button class="btn btn-secondary" onclick="copyConfig()">📋 Copy Configuration</button>
-      </div>
-      
-      <div class="card">
-        <h2>📁 Generated Files</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1rem;">Files generated by AI with unmasked PII. Download before they expire.</p>
-        
-        <div id="files-list">
-          <p style="color: var(--text-secondary); font-style: italic;">No files available</p>
-        </div>
-        
-        <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-secondary" onclick="loadFiles()">🔄 Refresh</button>
-          <button class="btn btn-secondary" onclick="toggleUploadForm()">📤 Upload File</button>
-        </div>
-        
-        <div id="upload-form" style="display:none;margin-top:1rem;padding:1rem;background:var(--bg-secondary);border-radius:8px;">
-          <h4 style="margin:0 0 0.75rem 0;">Upload Masked File</h4>
-          <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:1rem;">
-            Upload a file containing masked PII tokens (M####:name, M####:email, etc.). 
-            The file will be unmasked when downloaded.
-          </p>
-          <div style="display:flex;flex-direction:column;gap:0.75rem;">
-            <div>
-              <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">File (CSV, TXT, DOCX, XLSX, PPTX)</label>
-              <input type="file" id="upload-file" accept=".csv,.txt,.tsv,.docx,.xlsx,.pptx" 
-                style="width:100%;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
-            </div>
-            <div>
-              <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">Course</label>
-              <div style="display:flex;gap:0.5rem;">
-                <select id="upload-course-select" 
-                  style="flex:1;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);">
-                  <option value="">-- Select a course --</option>
-                </select>
-                <input type="number" id="upload-course-id" placeholder="or enter ID" 
-                  style="width:120px;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
-              </div>
-              <span style="font-size:0.75rem;color:var(--text-secondary);">Select from roster or enter Moodle course ID</span>
-            </div>
-            <div style="display:flex;gap:0.5rem;">
-              <button class="btn btn-primary" onclick="uploadFile()">Upload</button>
-              <button class="btn btn-secondary" onclick="toggleUploadForm()">Cancel</button>
-            </div>
-            <div id="upload-status" style="font-size:0.85rem;"></div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="card">
-        <h2>🔄 PII Mask / Unmask Tool</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
-          Convert between masked tokens and real names. Useful for preparing content for AI or reviewing AI-generated text.
-        </p>
-        
-        <div style="margin-bottom: 1rem;">
-          <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">Course</label>
-          <select id="pii-course-select" onchange="loadPiiCourseSelect()"
-            style="width:100%;max-width:300px;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);">
-            <option value="">-- Select a course --</option>
-          </select>
-        </div>
-        
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
-          <div>
-            <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">
-              Input (paste text containing names or tokens)
-            </label>
-            <textarea id="pii-input" placeholder="Paste text here...&#10;&#10;Examples:&#10;- 'Contact John Smith for help'&#10;- 'M12345_name submitted late'" 
-              style="width:100%;height:200px;padding:0.75rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:0.85rem;resize:vertical;"></textarea>
-          </div>
-          <div>
-            <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">
-              Output
-            </label>
-            <textarea id="pii-output" readonly placeholder="Result will appear here..."
-              style="width:100%;height:200px;padding:0.75rem;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:0.85rem;resize:vertical;"></textarea>
-          </div>
-        </div>
-        
-        <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;">
-          <button class="btn btn-primary" onclick="maskText()">🔒 Mask (Names → Tokens)</button>
-          <button class="btn btn-secondary" onclick="unmaskText()">🔓 Unmask (Tokens → Names)</button>
-          <button class="btn btn-secondary" onclick="copyPiiOutput()">📋 Copy Output</button>
-          <button class="btn btn-secondary" onclick="swapPiiFields()">⇄ Swap</button>
-        </div>
-        
-        <div id="pii-status" style="margin-top:0.75rem;font-size:0.85rem;"></div>
-        
-        <details style="margin-top: 1rem;">
-          <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9rem;">📁 Mask/Unmask File</summary>
-          <div style="margin-top: 0.75rem; padding: 1rem; background: var(--bg-secondary); border-radius: 8px;">
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
-              Upload a file to mask all PII (replace names with tokens) or unmask (replace tokens with names).
-            </p>
-            <div style="display:flex;flex-direction:column;gap:0.75rem;">
-              <input type="file" id="pii-file" accept=".csv,.txt,.tsv,.docx,.xlsx,.pptx"
-                style="padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
-              <div style="display:flex;gap:0.5rem;">
-                <button class="btn btn-primary" onclick="maskFileUpload()">🔒 Mask File</button>
-                <button class="btn btn-secondary" onclick="unmaskFileUpload()">🔓 Unmask File</button>
-              </div>
-            </div>
-          </div>
-        </details>
-      </div>
-    </div>
-    
-    <footer style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); text-align: center;">
-      <p style="color: var(--text-secondary); font-size: 0.85rem;">Moodle MCP · Built for educators, by educators.</p>
-      <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
-        <span style="color: #10b981;">v${versionInfo.version}</span>
-        <span style="color: var(--text-secondary);">·</span>
-        <span style="color: #8b5cf6;" title="Commit: ${versionInfo.commitFull}">${versionInfo.commit}</span>
-        ${versionInfo.buildDate ? `<span style="color: var(--text-secondary);">·</span><span style="color: #6b7280;" title="Build date">${new Date(versionInfo.buildDate).toLocaleDateString()}</span>` : ''}
-      </div>
-    </footer>
-  </div>
-  
-  <script>
-    async function loadDashboard() {
-      try {
-        // Get user info
-        const userRes = await fetch('/auth/me');
-        if (!userRes.ok) {
-          window.location.href = '/';
-          return;
-        }
-        const user = await userRes.json();
-        
-        document.getElementById('user-name').textContent = user.name || user.email;
-        if (user.picture) {
-          document.getElementById('user-picture').src = user.picture;
-        }
-        
-        // Get API keys
-        const keysRes = await fetch('/api/keys');
-        const { keys } = await keysRes.json();
-        
-        const keysList = document.getElementById('api-keys-list');
-        if (keys.length === 0) {
-          keysList.innerHTML = '<p style="color: var(--text-secondary)">No API keys yet. Create one to get started.</p><br/>';
-        } else {
-          keysList.innerHTML = keys.map(key => \`
-            <div class="api-key">
-              <div>
-                <strong>\${key.name}</strong><br/>
-                <span class="api-key-value">\${key.keyPrefix}...</span>
-              </div>
-              <button class="btn btn-danger" onclick="revokeKey('\${key.id}')">Revoke</button>
-            </div>
-          \`).join('');
-        }
-        
-        // Set up MCP config display
-        showConfig('cursor'); // Default to Cursor
-        
-        // Load files list and courses
-        loadFiles();
-        loadCourses();
-        
-        // Show content
-        document.getElementById('loading').classList.add('hidden');
-        document.getElementById('content').classList.remove('hidden');
-      } catch (error) {
-        console.error('Error loading dashboard:', error);
-        document.getElementById('loading').textContent = 'Error loading dashboard. Please try again.';
-      }
-    }
-    
-    async function createApiKey() {
-      const name = prompt('Enter a name for this API key (e.g., "My Laptop", "Work PC"):');
-      if (!name) return;
-      
-      try {
-        const res = await fetch('/api/keys', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        
-        const data = await res.json();
-        
-        if (data.key) {
-          userApiKey = data.key;
-          showApiKeyModal(data.key);
-          showConfig(currentConfigType); // Refresh config with new key
-          loadDashboard();
-        } else {
-          alert('Error: ' + (data.error || 'Failed to create key'));
-        }
-      } catch (error) {
-        alert('Error creating API key');
-      }
-    }
-    
-    function showApiKeyModal(key) {
-      const modal = document.createElement('div');
-      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;z-index:1000;cursor:pointer;';
-      modal.innerHTML = \`
-        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:2rem;max-width:500px;width:90%;cursor:default;" onclick="event.stopPropagation();">
-          <h3 style="color:var(--success);margin-bottom:1rem;">✓ API Key Created!</h3>
-          <p style="color:var(--text-secondary);margin-bottom:1rem;font-size:0.9rem;">Save this key now - it will not be shown again!</p>
-          <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;">
-            <code style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;word-break:break-all;user-select:all;cursor:text;">\${key}</code>
-          </div>
-          <div style="display:flex;gap:1rem;">
-            <button onclick="navigator.clipboard.writeText('\${key}');this.textContent='Copied!';this.style.background='var(--success)';" class="btn btn-primary" style="flex:1;">📋 Copy Key</button>
-            <button onclick="this.closest('[style*=\\"position:fixed\\"]').remove();" class="btn btn-secondary" style="flex:1;">Close</button>
-          </div>
-        </div>
-      \`;
-      // Click outside (on overlay) to close
-      modal.onclick = () => modal.remove();
-      document.body.appendChild(modal);
-    }
-    
-    async function revokeKey(keyId) {
-      if (!confirm('Are you sure you want to revoke this API key?')) return;
-      
-      try {
-        await fetch('/api/keys/' + keyId, { method: 'DELETE' });
-        loadDashboard();
-      } catch (error) {
-        alert('Error revoking key');
-      }
-    }
-    
-    // File management functions
-    async function loadCourses() {
-      try {
-        const res = await fetch('/files/courses');
-        if (!res.ok) {
-          console.log('Could not load courses (may not have roster data yet)');
-          return;
-        }
-        
-        const data = await res.json();
-        
-        // Populate both course selectors
-        const selectors = [
-          document.getElementById('upload-course-select'),
-          document.getElementById('pii-course-select')
-        ].filter(Boolean);
-        
-        selectors.forEach(select => {
-          // Keep the default option
-          select.innerHTML = '<option value="">-- Select a course --</option>';
-          
-          if (data.courses && data.courses.length > 0) {
-            data.courses.forEach(course => {
-              const option = document.createElement('option');
-              option.value = course.id;
-              option.textContent = course.name;
-              select.appendChild(option);
-            });
-          }
-        });
-      } catch (error) {
-        console.log('Error loading courses:', error);
-      }
-    }
-    
-    async function loadFiles() {
-      const filesList = document.getElementById('files-list');
-      
-      try {
-        console.log('[loadFiles] Fetching /files/list...');
-        const res = await fetch('/files/list');
-        console.log('[loadFiles] Response status:', res.status);
-        
-        if (!res.ok) {
-          const errorText = await res.text();
-          console.error('[loadFiles] Failed to load files:', res.status, errorText);
-          filesList.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">Could not load files</p>';
-          return;
-        }
-        
-        const data = await res.json();
-        console.log('[loadFiles] Got data:', data);
-        
-        if (!data.files || data.files.length === 0) {
-          filesList.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">No files available</p>';
-          return;
-        }
-        
-        filesList.innerHTML = data.files.map(file => {
-          const expiresIn = Math.round(file.time_remaining_ms / 60000); // minutes
-          const isExpiringSoon = expiresIn < 15;
-          const statusIcon = file.is_downloaded ? '✓' : '○';
-          const statusColor = file.is_downloaded ? 'var(--success)' : 'var(--text-secondary)';
-          
-          return \`
-            <div class="api-key-item" style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:var(--bg-secondary);border-radius:8px;margin-bottom:0.5rem;">
-              <div style="flex:1;">
-                <strong>\${file.filename}</strong>
-                <span style="color:\${statusColor};margin-left:0.5rem;">\${statusIcon}</span>
-                <br/>
-                <span style="font-size:0.8rem;color:var(--text-secondary);">
-                  Course: \${file.course_id} · 
-                  <span style="color:\${isExpiringSoon ? 'var(--danger)' : 'var(--text-secondary)'}">
-                    Expires in \${expiresIn} min
-                  </span>
-                  \${file.downloaded_at ? ' · Downloaded' : ''}
-                </span>
-              </div>
-              <div style="display:flex;gap:0.5rem;">
-                <a href="/files/\${file.id}" class="btn btn-primary" style="text-decoration:none;padding:0.4rem 0.75rem;font-size:0.85rem;" download>⬇ Download</a>
-                <button class="btn btn-danger" style="padding:0.4rem 0.75rem;font-size:0.85rem;" onclick="deleteFile('\${file.id}')">🗑</button>
-              </div>
-            </div>
-          \`;
-        }).join('');
-      } catch (error) {
-        console.error('[loadFiles] Error:', error);
-        filesList.innerHTML = '<p style="color: var(--danger); font-style: italic;">Error loading files</p>';
-      }
-    }
-    
-    async function deleteFile(fileId) {
-      if (!confirm('Delete this file?')) return;
-      
-      try {
-        const res = await fetch('/files/' + fileId, { method: 'DELETE' });
-        if (res.ok) {
-          loadFiles();
-        } else {
-          alert('Failed to delete file');
-        }
-      } catch (error) {
-        alert('Error deleting file');
-      }
-    }
-    
-    function toggleUploadForm() {
-      const form = document.getElementById('upload-form');
-      form.style.display = form.style.display === 'none' ? 'block' : 'none';
-      document.getElementById('upload-status').innerHTML = '';
-      // Load courses when opening the form
-      if (form.style.display !== 'none') {
-        loadCourses();
-      }
-    }
-    
-    async function uploadFile() {
-      const fileInput = document.getElementById('upload-file');
-      const courseSelect = document.getElementById('upload-course-select');
-      const courseIdInput = document.getElementById('upload-course-id');
-      const statusDiv = document.getElementById('upload-status');
-      
-      const file = fileInput.files[0];
-      // Prefer select dropdown, fall back to manual input
-      const courseId = parseInt(courseSelect.value, 10) || parseInt(courseIdInput.value, 10);
-      
-      if (!file) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a file</span>';
-        return;
-      }
-      
-      if (!courseId) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please enter a course ID</span>';
-        return;
-      }
-      
-      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Uploading...</span>';
-      
-      try {
-        // Read file as base64
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const base64 = e.target.result.split(',')[1]; // Remove data:xxx;base64, prefix
-          
-          const res = await fetch('/files/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              content: base64,
-              filename: file.name,
-              course_id: courseId,
-              is_base64: true
-            })
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            statusDiv.innerHTML = \`
-              <span style="color:var(--success)">✓ Uploaded successfully!</span><br/>
-              <a href="\${data.download_url}" style="color:var(--primary);" download>Download unmasked file</a>
-            \`;
-            fileInput.value = '';
-            loadFiles();
-          } else {
-            const err = await res.json();
-            statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${err.error || 'Upload failed'}</span>\`;
-          }
-        };
-        reader.onerror = () => {
-          statusDiv.innerHTML = '<span style="color:var(--danger)">Error reading file</span>';
-        };
-        reader.readAsDataURL(file);
-      } catch (error) {
-        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
-      }
-    }
-    
-    function copyConfig() {
-      const config = document.getElementById('mcp-config').textContent;
-      navigator.clipboard.writeText(config);
-      alert('Configuration copied to clipboard!');
-    }
-    
-    let currentConfigType = 'cursor';
-    let serverUrl = window.location.origin;
-    let userApiKey = 'YOUR_API_KEY';
-    
-    function showConfig(type) {
-      currentConfigType = type;
-      const configEl = document.getElementById('mcp-config');
-      const cursorNote = document.getElementById('cursor-note');
-      const claudeNote = document.getElementById('claude-note');
-      const btnCursor = document.getElementById('btn-cursor');
-      const btnClaude = document.getElementById('btn-claude');
-      
-      if (type === 'cursor') {
-        configEl.textContent = JSON.stringify({
-          mcpServers: {
-            moodle: {
-              command: "npx",
-              args: ["tsx", "/path/to/mcp-remote/src/index.ts"],
-              env: {
-                MCP_SERVER_URL: serverUrl,
-                MCP_API_KEY: userApiKey
-              }
-            }
-          }
-        }, null, 2);
-        cursorNote.classList.remove('hidden');
-        claudeNote.classList.add('hidden');
-        btnCursor.style.opacity = '1';
-        btnCursor.style.background = 'var(--accent)';
-        btnClaude.style.opacity = '0.6';
-        btnClaude.style.background = 'var(--bg-secondary)';
-      } else {
-        configEl.textContent = JSON.stringify({
-          mcpServers: {
-            moodle: {
-              transport: {
-                type: "sse",
-                url: serverUrl + "/mcp/sse"
-              },
-              headers: {
-                Authorization: "Bearer " + userApiKey
-              }
-            }
-          }
-        }, null, 2);
-        cursorNote.classList.add('hidden');
-        claudeNote.classList.remove('hidden');
-        btnClaude.style.opacity = '1';
-        btnClaude.style.background = 'var(--accent)';
-        btnCursor.style.opacity = '0.6';
-        btnCursor.style.background = 'var(--bg-secondary)';
-      }
-    }
-    
-    async function logout() {
-      await fetch('/auth/logout', { method: 'POST' });
-      window.location.href = '/';
-    }
-    
-    async function checkBrowserStatus() {
-      try {
-        const res = await fetch('/auth/browser-status');
-        const data = await res.json();
-        const statusEl = document.getElementById('browser-status');
-        if (data.connected) {
-          statusEl.innerHTML = '<span class="status status-connected">● Connected</span>';
-        } else {
-          statusEl.innerHTML = '<span class="status status-disconnected">● Disconnected</span>';
-        }
-      } catch (e) {
-        console.error('Error checking browser status:', e);
-      }
-    }
-    
-    // ==================== PII Mask/Unmask Functions ====================
-    
-    function loadPiiCourseSelect() {
-      // Populate the PII tool course selector (reuse data from main courses)
-      const select = document.getElementById('pii-course-select');
-      const uploadSelect = document.getElementById('upload-course-select');
-      
-      // Copy options from upload course select if available
-      if (uploadSelect && uploadSelect.options.length > 1) {
-        select.innerHTML = uploadSelect.innerHTML;
-      }
-    }
-    
-    async function maskText() {
-      const input = document.getElementById('pii-input').value;
-      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
-      const statusDiv = document.getElementById('pii-status');
-      const outputEl = document.getElementById('pii-output');
-      
-      if (!input.trim()) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please enter text to mask</span>';
-        return;
-      }
-      
-      if (!courseId) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
-        return;
-      }
-      
-      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Masking...</span>';
-      
-      try {
-        const res = await fetch('/api/pii/mask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: input, course_id: courseId })
-        });
-        
-        const data = await res.json();
-        
-        if (res.ok) {
-          outputEl.value = data.masked;
-          statusDiv.innerHTML = \`<span style="color:var(--success)">✓ Masked: \${data.stats.names} names, \${data.stats.emails} emails, \${data.stats.ids} IDs</span>\`;
-        } else {
-          statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${data.error}</span>\`;
-          outputEl.value = data.masked || '';
-        }
-      } catch (error) {
-        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
-      }
-    }
-    
-    async function unmaskText() {
-      const input = document.getElementById('pii-input').value;
-      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
-      const statusDiv = document.getElementById('pii-status');
-      const outputEl = document.getElementById('pii-output');
-      
-      if (!input.trim()) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please enter text to unmask</span>';
-        return;
-      }
-      
-      if (!courseId) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
-        return;
-      }
-      
-      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Unmasking...</span>';
-      
-      try {
-        const res = await fetch('/api/pii/unmask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: input, course_id: courseId })
-        });
-        
-        const data = await res.json();
-        
-        if (res.ok) {
-          outputEl.value = data.unmasked;
-          statusDiv.innerHTML = \`<span style="color:var(--success)">✓ Unmasked: \${data.stats.names} names, \${data.stats.emails} emails, \${data.stats.ids} IDs</span>\`;
-        } else {
-          statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${data.error}</span>\`;
-          outputEl.value = data.unmasked || '';
-        }
-      } catch (error) {
-        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
-      }
-    }
-    
-    function copyPiiOutput() {
-      const output = document.getElementById('pii-output').value;
-      if (!output) {
-        document.getElementById('pii-status').innerHTML = '<span style="color:var(--danger)">Nothing to copy</span>';
-        return;
-      }
-      navigator.clipboard.writeText(output);
-      document.getElementById('pii-status').innerHTML = '<span style="color:var(--success)">✓ Copied to clipboard</span>';
-    }
-    
-    function swapPiiFields() {
-      const inputEl = document.getElementById('pii-input');
-      const outputEl = document.getElementById('pii-output');
-      const temp = inputEl.value;
-      inputEl.value = outputEl.value;
-      outputEl.value = temp;
-    }
-    
-    async function maskFileUpload() {
-      const fileInput = document.getElementById('pii-file');
-      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
-      const statusDiv = document.getElementById('pii-status');
-      
-      const file = fileInput.files[0];
-      if (!file) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a file</span>';
-        return;
-      }
-      
-      if (!courseId) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
-        return;
-      }
-      
-      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Masking file...</span>';
-      
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('course_id', courseId.toString());
-        
-        const res = await fetch('/files/mask', {
-          method: 'POST',
-          body: formData
-        });
-        
-        if (res.ok) {
-          // Download the masked file
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'masked-' + file.name;
-          a.click();
-          URL.revokeObjectURL(url);
-          
-          statusDiv.innerHTML = '<span style="color:var(--success)">✓ File masked and downloaded</span>';
-          fileInput.value = '';
-        } else {
-          const err = await res.json();
-          statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${err.error}</span>\`;
-        }
-      } catch (error) {
-        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
-      }
-    }
-    
-    async function unmaskFileUpload() {
-      const fileInput = document.getElementById('pii-file');
-      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
-      const statusDiv = document.getElementById('pii-status');
-      
-      const file = fileInput.files[0];
-      if (!file) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a file</span>';
-        return;
-      }
-      
-      if (!courseId) {
-        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
-        return;
-      }
-      
-      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Uploading for unmasking...</span>';
-      
-      // Use the existing upload flow for unmasking
-      try {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const base64 = e.target.result.split(',')[1];
-          
-          const res = await fetch('/files/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              content: base64,
-              filename: file.name,
-              course_id: courseId,
-              is_base64: true
-            })
-          });
-          
-          if (res.ok) {
-            const data = await res.json();
-            statusDiv.innerHTML = \`
-              <span style="color:var(--success)">✓ File uploaded!</span>
-              <a href="\${data.download_url}" style="color:var(--accent);margin-left:0.5rem;" download>Download unmasked</a>
-            \`;
-            fileInput.value = '';
-            loadFiles();
-          } else {
-            const err = await res.json();
-            statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${err.error}</span>\`;
-          }
-        };
-        reader.readAsDataURL(file);
-      } catch (error) {
-        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
-      }
-    }
-    
-    loadDashboard();
-    checkBrowserStatus();
-    // Poll browser status every 10 seconds (balance between responsiveness and server load)
-    setInterval(checkBrowserStatus, 10000);
-    // Refresh files list every 30 seconds to update expiration times
-    setInterval(loadFiles, 30000);
-  </script>
-</body>
-</html>
-`;

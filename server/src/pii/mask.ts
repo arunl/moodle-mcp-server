@@ -286,9 +286,11 @@ function buildUnambiguousPatternMap(roster: PiiRosterEntry[]): Map<string, { ent
   for (const [pattern, { entryIds, entries, original, confidence }] of patternToEntries) {
     if (entryIds.size === 1) {
       // Unique pattern - safe to use (only one distinct student matches)
-      const entryId = entryIds.values().next().value;
-      const entry = entries.get(entryId)!;
-      unambiguous.set(pattern, { entry, original });
+      const entryId = entryIds.values().next().value as number;
+      const entry = entries.get(entryId);
+      if (entry) {
+        unambiguous.set(pattern, { entry, original });
+      }
     } else {
       // Ambiguous pattern - log and skip (multiple different students match)
       const names = Array.from(entries.values())

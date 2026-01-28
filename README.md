@@ -179,18 +179,34 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 | `move_section` | Reorder sections |
 | `enable_editing` | Enable editing mode |
 
-## Security
+## Security & Privacy
 
 - 🔐 **Credentials stay local** — Your Moodle session never leaves your browser
 - 🔑 **API keys are hashed** — Server stores only hashes
 - 🚫 **No data storage** — Server routes commands only
 - 🔒 **HTTPS/WSS** — All traffic encrypted in production
+- 🎓 **FERPA Compliant** — Student PII is masked before reaching AI services
+
+### Student Data Protection
+
+Moodle MCP protects student privacy through **automatic PII masking**:
+
+```
+Your Browser          Cloud Server          AI Service
+─────────────         ────────────          ──────────
+"John Smith"    →     "M12345_name"    →    "M12345_name"
+(real name)           (masked token)        (masked token)
+```
+
+Student names, emails, and IDs are replaced with anonymous tokens before leaving your browser. The AI never sees real student information. [Learn more →](docs/FERPA-COMPLIANCE.md)
 
 ## Documentation
 
 - [Setup Guide](docs/SETUP-GUIDE.md) — Detailed setup for various AI clients
 - [Deployment Guide](docs/DEPLOYMENT.md) — Self-hosting the server
 - [Architecture](docs/HOSTED-SERVICE-ARCHITECTURE.md) — Technical details
+- [**FERPA Compliance**](docs/FERPA-COMPLIANCE.md) — Student data privacy & protection
+- [Privacy Quick Reference](docs/PRIVACY-QUICK-REFERENCE.md) — One-page privacy summary
 
 ## License
 

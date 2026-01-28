@@ -740,6 +740,11 @@ const landingPageHtml = `
     
     <section class="features" id="features">
       <div class="feature-card">
+        <div class="feature-icon">🎓</div>
+        <h3>FERPA Compliant</h3>
+        <p>Student names are automatically masked before reaching AI services. <a href="/docs/FERPA-COMPLIANCE.md" style="color:var(--accent);">Learn how →</a></p>
+      </div>
+      <div class="feature-card">
         <div class="feature-icon">🔐</div>
         <h3>Secure by Design</h3>
         <p>Your Moodle credentials never leave your browser. The server only routes commands—all interactions happen locally.</p>
@@ -816,6 +821,11 @@ const landingPageHtml = `
     
     <footer>
       <p>Moodle MCP · Built for educators, by educators.</p>
+      <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+        <a href="https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/FERPA-COMPLIANCE.md" style="color: #10b981; text-decoration: none;">🔒 FERPA Compliant</a>
+        <span style="color: var(--text-secondary);"> · </span>
+        <a href="https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/PRIVACY-QUICK-REFERENCE.md" style="color: var(--text-secondary); text-decoration: none;">Privacy</a>
+      </p>
       <div class="version-info">
         <span class="version">v${versionInfo.version}</span>
         <span class="separator">·</span>
@@ -1013,6 +1023,27 @@ const dashboardPageHtml = `
         </div>
       </header>
       
+      <div class="card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05)); border-color: rgba(16, 185, 129, 0.3);">
+        <h2 style="color: #10b981;">🔒 Student Privacy Protected</h2>
+        <p style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6;">
+          Moodle MCP automatically masks student PII before it reaches AI services. Names like <code style="background:var(--bg-secondary);padding:0.15rem 0.4rem;border-radius:4px;font-size:0.8rem;">John Smith</code> 
+          become <code style="background:var(--bg-secondary);padding:0.15rem 0.4rem;border-radius:4px;font-size:0.8rem;">M12345_name</code> — the AI never sees real student data.
+        </p>
+        <details style="margin-top: 0.75rem;">
+          <summary style="cursor: pointer; color: #10b981; font-size: 0.9rem;">📚 Learn more about FERPA compliance</summary>
+          <div style="margin-top: 0.75rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.85rem;">
+            <p style="margin-bottom: 0.5rem;">✓ Student names masked before leaving your browser</p>
+            <p style="margin-bottom: 0.5rem;">✓ Server never stores student information</p>
+            <p style="margin-bottom: 0.5rem;">✓ AI services only see anonymous tokens</p>
+            <p style="margin-bottom: 0.5rem;">✓ Names restored only when posting to Moodle</p>
+            <a href="https://github.com/arunlakhotia/moodle-mcp/blob/main/docs/FERPA-COMPLIANCE.md" 
+               target="_blank" style="color: var(--accent); text-decoration: none;">
+              Read full documentation →
+            </a>
+          </div>
+        </details>
+      </div>
+      
       <div class="card">
         <h2>🔌 Browser Extension Status</h2>
         <p>Install the browser extension and log in to connect your Moodle session.</p>
@@ -1121,6 +1152,64 @@ const dashboardPageHtml = `
             <div id="upload-status" style="font-size:0.85rem;"></div>
           </div>
         </div>
+      </div>
+      
+      <div class="card">
+        <h2>🔄 PII Mask / Unmask Tool</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+          Convert between masked tokens and real names. Useful for preparing content for AI or reviewing AI-generated text.
+        </p>
+        
+        <div style="margin-bottom: 1rem;">
+          <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">Course</label>
+          <select id="pii-course-select" onchange="loadPiiCourseSelect()"
+            style="width:100%;max-width:300px;padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);">
+            <option value="">-- Select a course --</option>
+          </select>
+        </div>
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+          <div>
+            <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">
+              Input (paste text containing names or tokens)
+            </label>
+            <textarea id="pii-input" placeholder="Paste text here...&#10;&#10;Examples:&#10;- 'Contact John Smith for help'&#10;- 'M12345_name submitted late'" 
+              style="width:100%;height:200px;padding:0.75rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:0.85rem;resize:vertical;"></textarea>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.25rem;">
+              Output
+            </label>
+            <textarea id="pii-output" readonly placeholder="Result will appear here..."
+              style="width:100%;height:200px;padding:0.75rem;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:0.85rem;resize:vertical;"></textarea>
+          </div>
+        </div>
+        
+        <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="maskText()">🔒 Mask (Names → Tokens)</button>
+          <button class="btn btn-secondary" onclick="unmaskText()">🔓 Unmask (Tokens → Names)</button>
+          <button class="btn btn-secondary" onclick="copyPiiOutput()">📋 Copy Output</button>
+          <button class="btn btn-secondary" onclick="swapPiiFields()">⇄ Swap</button>
+        </div>
+        
+        <div id="pii-status" style="margin-top:0.75rem;font-size:0.85rem;"></div>
+        
+        <details style="margin-top: 1rem;">
+          <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9rem;">📁 Mask/Unmask File</summary>
+          <div style="margin-top: 0.75rem; padding: 1rem; background: var(--bg-secondary); border-radius: 8px;">
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+              Upload a file to mask all PII (replace names with tokens) or unmask (replace tokens with names).
+            </p>
+            <div style="display:flex;flex-direction:column;gap:0.75rem;">
+              <input type="file" id="pii-file" accept=".csv,.txt,.tsv,.docx,.xlsx,.pptx"
+                style="padding:0.5rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);" />
+              <div style="display:flex;gap:0.5rem;">
+                <button class="btn btn-primary" onclick="maskFileUpload()">🔒 Mask File</button>
+                <button class="btn btn-secondary" onclick="unmaskFileUpload()">🔓 Unmask File</button>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
     
@@ -1254,19 +1343,26 @@ const dashboardPageHtml = `
         }
         
         const data = await res.json();
-        const select = document.getElementById('upload-course-select');
         
-        // Keep the default option
-        select.innerHTML = '<option value="">-- Select a course --</option>';
+        // Populate both course selectors
+        const selectors = [
+          document.getElementById('upload-course-select'),
+          document.getElementById('pii-course-select')
+        ].filter(Boolean);
         
-        if (data.courses && data.courses.length > 0) {
-          data.courses.forEach(course => {
-            const option = document.createElement('option');
-            option.value = course.id;
-            option.textContent = course.name;
-            select.appendChild(option);
-          });
-        }
+        selectors.forEach(select => {
+          // Keep the default option
+          select.innerHTML = '<option value="">-- Select a course --</option>';
+          
+          if (data.courses && data.courses.length > 0) {
+            data.courses.forEach(course => {
+              const option = document.createElement('option');
+              option.value = course.id;
+              option.textContent = course.name;
+              select.appendChild(option);
+            });
+          }
+        });
       } catch (error) {
         console.log('Error loading courses:', error);
       }
@@ -1491,6 +1587,218 @@ const dashboardPageHtml = `
         }
       } catch (e) {
         console.error('Error checking browser status:', e);
+      }
+    }
+    
+    // ==================== PII Mask/Unmask Functions ====================
+    
+    function loadPiiCourseSelect() {
+      // Populate the PII tool course selector (reuse data from main courses)
+      const select = document.getElementById('pii-course-select');
+      const uploadSelect = document.getElementById('upload-course-select');
+      
+      // Copy options from upload course select if available
+      if (uploadSelect && uploadSelect.options.length > 1) {
+        select.innerHTML = uploadSelect.innerHTML;
+      }
+    }
+    
+    async function maskText() {
+      const input = document.getElementById('pii-input').value;
+      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
+      const statusDiv = document.getElementById('pii-status');
+      const outputEl = document.getElementById('pii-output');
+      
+      if (!input.trim()) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please enter text to mask</span>';
+        return;
+      }
+      
+      if (!courseId) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
+        return;
+      }
+      
+      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Masking...</span>';
+      
+      try {
+        const res = await fetch('/api/pii/mask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: input, course_id: courseId })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          outputEl.value = data.masked;
+          statusDiv.innerHTML = \`<span style="color:var(--success)">✓ Masked: \${data.stats.names} names, \${data.stats.emails} emails, \${data.stats.ids} IDs</span>\`;
+        } else {
+          statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${data.error}</span>\`;
+          outputEl.value = data.masked || '';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
+      }
+    }
+    
+    async function unmaskText() {
+      const input = document.getElementById('pii-input').value;
+      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
+      const statusDiv = document.getElementById('pii-status');
+      const outputEl = document.getElementById('pii-output');
+      
+      if (!input.trim()) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please enter text to unmask</span>';
+        return;
+      }
+      
+      if (!courseId) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
+        return;
+      }
+      
+      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Unmasking...</span>';
+      
+      try {
+        const res = await fetch('/api/pii/unmask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: input, course_id: courseId })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          outputEl.value = data.unmasked;
+          statusDiv.innerHTML = \`<span style="color:var(--success)">✓ Unmasked: \${data.stats.names} names, \${data.stats.emails} emails, \${data.stats.ids} IDs</span>\`;
+        } else {
+          statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${data.error}</span>\`;
+          outputEl.value = data.unmasked || '';
+        }
+      } catch (error) {
+        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
+      }
+    }
+    
+    function copyPiiOutput() {
+      const output = document.getElementById('pii-output').value;
+      if (!output) {
+        document.getElementById('pii-status').innerHTML = '<span style="color:var(--danger)">Nothing to copy</span>';
+        return;
+      }
+      navigator.clipboard.writeText(output);
+      document.getElementById('pii-status').innerHTML = '<span style="color:var(--success)">✓ Copied to clipboard</span>';
+    }
+    
+    function swapPiiFields() {
+      const inputEl = document.getElementById('pii-input');
+      const outputEl = document.getElementById('pii-output');
+      const temp = inputEl.value;
+      inputEl.value = outputEl.value;
+      outputEl.value = temp;
+    }
+    
+    async function maskFileUpload() {
+      const fileInput = document.getElementById('pii-file');
+      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
+      const statusDiv = document.getElementById('pii-status');
+      
+      const file = fileInput.files[0];
+      if (!file) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a file</span>';
+        return;
+      }
+      
+      if (!courseId) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
+        return;
+      }
+      
+      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Masking file...</span>';
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('course_id', courseId.toString());
+        
+        const res = await fetch('/files/mask', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (res.ok) {
+          // Download the masked file
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'masked-' + file.name;
+          a.click();
+          URL.revokeObjectURL(url);
+          
+          statusDiv.innerHTML = '<span style="color:var(--success)">✓ File masked and downloaded</span>';
+          fileInput.value = '';
+        } else {
+          const err = await res.json();
+          statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${err.error}</span>\`;
+        }
+      } catch (error) {
+        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
+      }
+    }
+    
+    async function unmaskFileUpload() {
+      const fileInput = document.getElementById('pii-file');
+      const courseId = parseInt(document.getElementById('pii-course-select').value, 10);
+      const statusDiv = document.getElementById('pii-status');
+      
+      const file = fileInput.files[0];
+      if (!file) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a file</span>';
+        return;
+      }
+      
+      if (!courseId) {
+        statusDiv.innerHTML = '<span style="color:var(--danger)">Please select a course</span>';
+        return;
+      }
+      
+      statusDiv.innerHTML = '<span style="color:var(--text-secondary)">Uploading for unmasking...</span>';
+      
+      // Use the existing upload flow for unmasking
+      try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const base64 = e.target.result.split(',')[1];
+          
+          const res = await fetch('/files/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: base64,
+              filename: file.name,
+              course_id: courseId,
+              is_base64: true
+            })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            statusDiv.innerHTML = \`
+              <span style="color:var(--success)">✓ File uploaded!</span>
+              <a href="\${data.download_url}" style="color:var(--accent);margin-left:0.5rem;" download>Download unmasked</a>
+            \`;
+            fileInput.value = '';
+            loadFiles();
+          } else {
+            const err = await res.json();
+            statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${err.error}</span>\`;
+          }
+        };
+        reader.readAsDataURL(file);
+      } catch (error) {
+        statusDiv.innerHTML = \`<span style="color:var(--danger)">Error: \${error.message}</span>\`;
       }
     }
     

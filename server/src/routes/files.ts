@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { db } from '../db/index.js';
 import { piiFiles } from '../pii/file-schema.js';
 import { piiRosters } from '../pii/schema.js';
-import { unmaskFile } from '../pii/files.js';
+import { unmaskFile, maskFile } from '../pii/files.js';
 import { getUserCourses } from '../pii/roster.js';
 import { eq, and, lt, sql } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
@@ -162,6 +162,112 @@ files.post('/upload', async (c) => {
     download_url: downloadUrl,
     expires_at: expiresAt.toISOString(),
     filename,
+  });
+});
+
+/**
+ * Mask a file (replace PII with tokens)
+ * 
+ * POST /files/mask
+ * Body: multipart/form-data or JSON:
+ *   - file/content: The file to mask
+ *   - course_id: Course ID for roster lookup
+ * 
+ * Returns: The masked file as download
+ * 
+ * This is the reverse of the normal flow - useful for preparing files
+ * before sharing with AI assistants.
+ */
+files.post('/mask', async (c) => {
+  // Get user from cookie auth (dashboard)
+  const { getCookie } = await import('hono/cookie');
+  const { verifyToken } = await import('../auth/jwt.js');
+  
+  const accessToken = getCookie(c, 'access_token');
+  if (!accessToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  
+  let userId: string;
+  try {
+    const payload = await verifyToken(accessToken);
+    if (!payload?.sub) {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+    userId = payload.sub;
+  } catch {
+    return c.json({ error: 'Invalid token' }, 401);
+  }
+  
+  const contentType = c.req.header('Content-Type') || '';
+  
+  let fileContent: Buffer;
+  let filename: string;
+  let courseId: number;
+  
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await c.req.formData();
+    const file = formData.get('file') as File | null;
+    const courseIdStr = formData.get('course_id') as string | null;
+    
+    if (!file || !courseIdStr) {
+      return c.json({ error: 'Missing file or course_id' }, 400);
+    }
+    
+    courseId = parseInt(courseIdStr, 10);
+    filename = file.name;
+    fileContent = Buffer.from(await file.arrayBuffer());
+  } else {
+    const body = await c.req.json<{
+      content: string;
+      filename: string;
+      course_id: number;
+      is_base64?: boolean;
+    }>();
+    
+    if (!body.content || !body.filename || !body.course_id) {
+      return c.json({ error: 'Missing content, filename, or course_id' }, 400);
+    }
+    
+    courseId = body.course_id;
+    filename = body.filename;
+    fileContent = body.is_base64 
+      ? Buffer.from(body.content, 'base64')
+      : Buffer.from(body.content, 'utf-8');
+  }
+  
+  // Validate file size
+  if (fileContent.length > MAX_FILE_SIZE) {
+    return c.json({ error: 'File too large (max 10 MB)' }, 400);
+  }
+  
+  // Get roster
+  const roster = await db
+    .select()
+    .from(piiRosters)
+    .where(
+      and(
+        eq(piiRosters.ownerUserId, userId),
+        eq(piiRosters.courseId, courseId)
+      )
+    );
+  
+  if (roster.length === 0) {
+    return c.json({ 
+      error: 'No roster found for this course. Please load participants first.' 
+    }, 400);
+  }
+  
+  // Mask the file
+  const masked = await maskFile(fileContent, filename, roster);
+  
+  // Return masked file as download
+  return new Response(masked.buffer, {
+    headers: {
+      'Content-Type': masked.mimeType,
+      'Content-Disposition': `attachment; filename="masked-${masked.filename}"`,
+      'Content-Length': masked.buffer.length.toString(),
+    },
   });
 });
 

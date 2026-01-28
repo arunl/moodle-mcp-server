@@ -92,43 +92,235 @@ function parseNameParts(displayName: string): { first: string; last: string; mid
 }
 
 /**
- * Generate name patterns for different formats
- * Returns patterns sorted by length (longest first)
+ * Pattern with confidence level for ambiguity handling
  */
-function generateNamePatterns(entry: PiiRosterEntry): string[] {
-  const patterns: string[] = [];
+interface NamePattern {
+  pattern: string;           // Escaped regex pattern
+  original: string;          // Original text (for debugging)
+  confidence: 'high' | 'medium' | 'low';  // How likely this is to be unique
+}
+
+/**
+ * Generate name patterns for different formats with confidence levels.
+ * 
+ * CRITICAL: Must handle middle names properly to avoid FERPA leaks.
+ * e.g., "Matheus John Nery" must also match "Matheus Nery"
+ * 
+ * Confidence levels:
+ * - HIGH: Full name, unlikely to collide (e.g., "Matheus John Nery")
+ * - MEDIUM: First + Last, may collide if same first/last names (e.g., "Matheus Nery")
+ * - LOW: Initials, likely to collide (e.g., "M. Nery", "J. Smith")
+ */
+function generateNamePatternsWithConfidence(entry: PiiRosterEntry): NamePattern[] {
+  const patterns: NamePattern[] = [];
   const displayName = entry.displayName;
   
-  // Always include the original display name
-  patterns.push(escapeRegex(displayName));
+  // Always include the original display name (HIGH confidence)
+  patterns.push({
+    pattern: escapeRegex(displayName),
+    original: displayName,
+    confidence: 'high'
+  });
   
   // Parse into parts to generate variations
   const parts = parseNameParts(displayName);
   if (parts) {
     const { first, last, middle } = parts;
     
-    // "Last, First" format
-    patterns.push(escapeRegex(`${last}, ${first}`));
-    
-    // "Last, First Middle" format (if middle name exists)
+    // === HIGH confidence: Full name variations ===
     if (middle) {
-      patterns.push(escapeRegex(`${last}, ${first} ${middle}`));
+      // "Last, First Middle" format
+      const lastFirstMiddle = `${last}, ${first} ${middle}`;
+      patterns.push({
+        pattern: escapeRegex(lastFirstMiddle),
+        original: lastFirstMiddle,
+        confidence: 'high'
+      });
+      
+      // "First M. Last" format (middle initial with period)
+      const middleInitial = middle.charAt(0);
+      const firstMiLast = `${first} ${middleInitial}. ${last}`;
+      patterns.push({
+        pattern: escapeRegex(firstMiLast),
+        original: firstMiLast,
+        confidence: 'high'
+      });
+      
+      // "First M Last" format (middle initial without period)
+      const firstMiLastNoPeriod = `${first} ${middleInitial} ${last}`;
+      patterns.push({
+        pattern: escapeRegex(firstMiLastNoPeriod),
+        original: firstMiLastNoPeriod,
+        confidence: 'high'
+      });
+      
+      // "Last, First M." format
+      const lastFirstMi = `${last}, ${first} ${middleInitial}.`;
+      patterns.push({
+        pattern: escapeRegex(lastFirstMi),
+        original: lastFirstMi,
+        confidence: 'high'
+      });
+      
+      // "Last, First M" format
+      const lastFirstMiNoPeriod = `${last}, ${first} ${middleInitial}`;
+      patterns.push({
+        pattern: escapeRegex(lastFirstMiNoPeriod),
+        original: lastFirstMiNoPeriod,
+        confidence: 'high'
+      });
     }
     
-    // "Last First" format (no comma, sometimes used)
-    patterns.push(escapeRegex(`${last} ${first}`));
+    // === MEDIUM confidence: First + Last (no middle) ===
+    // These could collide if two students have same first AND last name
+    
+    // "First Last" format (CRITICAL for FERPA - catches "Matheus Nery")
+    const firstLast = `${first} ${last}`;
+    patterns.push({
+      pattern: escapeRegex(firstLast),
+      original: firstLast,
+      confidence: 'medium'
+    });
+    
+    // "Last, First" format
+    const lastFirst = `${last}, ${first}`;
+    patterns.push({
+      pattern: escapeRegex(lastFirst),
+      original: lastFirst,
+      confidence: 'medium'
+    });
+    
+    // "Last First" format (no comma)
+    const lastFirstNoComma = `${last} ${first}`;
+    patterns.push({
+      pattern: escapeRegex(lastFirstNoComma),
+      original: lastFirstNoComma,
+      confidence: 'medium'
+    });
+    
+    // === LOW confidence: Initial variations ===
+    // These are very likely to collide (e.g., "J. Smith" matches many people)
+    const firstInitial = first.charAt(0);
+    
+    // "F. Last" format
+    const fLast = `${firstInitial}. ${last}`;
+    patterns.push({
+      pattern: escapeRegex(fLast),
+      original: fLast,
+      confidence: 'low'
+    });
+    
+    // "F Last" format (no period)
+    const fLastNoPeriod = `${firstInitial} ${last}`;
+    patterns.push({
+      pattern: escapeRegex(fLastNoPeriod),
+      original: fLastNoPeriod,
+      confidence: 'low'
+    });
+    
+    // "Last, F." format
+    const lastF = `${last}, ${firstInitial}.`;
+    patterns.push({
+      pattern: escapeRegex(lastF),
+      original: lastF,
+      confidence: 'low'
+    });
+    
+    // "Last, F" format
+    const lastFNoPeriod = `${last}, ${firstInitial}`;
+    patterns.push({
+      pattern: escapeRegex(lastFNoPeriod),
+      original: lastFNoPeriod,
+      confidence: 'low'
+    });
   }
   
-  // Sort by length descending (match longer patterns first)
-  return patterns.sort((a, b) => b.length - a.length);
+  return patterns;
+}
+
+/**
+ * Build a map of patterns to roster entries, detecting ambiguities.
+ * Returns only patterns that uniquely identify a single student.
+ * 
+ * Ambiguous patterns (matching multiple different students) are logged and skipped.
+ */
+function buildUnambiguousPatternMap(roster: PiiRosterEntry[]): Map<string, { entry: PiiRosterEntry; original: string }> {
+  // First pass: collect all patterns and which entries they match
+  // Use Set of moodleUserId to avoid counting the same student multiple times
+  const patternToEntries = new Map<string, { 
+    entryIds: Set<number>;  // Use Set of moodleUserIds to dedupe
+    entries: Map<number, PiiRosterEntry>;  // Map for quick lookup
+    original: string; 
+    confidence: string 
+  }>();
+  
+  for (const entry of roster) {
+    const patterns = generateNamePatternsWithConfidence(entry);
+    for (const { pattern, original, confidence } of patterns) {
+      const normalizedPattern = pattern.toLowerCase();
+      const existing = patternToEntries.get(normalizedPattern);
+      
+      if (existing) {
+        // Only add if this is a DIFFERENT student
+        if (!existing.entryIds.has(entry.moodleUserId)) {
+          existing.entryIds.add(entry.moodleUserId);
+          existing.entries.set(entry.moodleUserId, entry);
+        }
+      } else {
+        const entryIds = new Set<number>([entry.moodleUserId]);
+        const entries = new Map<number, PiiRosterEntry>([[entry.moodleUserId, entry]]);
+        patternToEntries.set(normalizedPattern, { 
+          entryIds,
+          entries,
+          original, 
+          confidence 
+        });
+      }
+    }
+  }
+  
+  // Second pass: filter to only unambiguous patterns
+  const unambiguous = new Map<string, { entry: PiiRosterEntry; original: string }>();
+  const ambiguousPatterns: string[] = [];
+  
+  for (const [pattern, { entryIds, entries, original, confidence }] of patternToEntries) {
+    if (entryIds.size === 1) {
+      // Unique pattern - safe to use (only one distinct student matches)
+      const entryId = entryIds.values().next().value;
+      const entry = entries.get(entryId)!;
+      unambiguous.set(pattern, { entry, original });
+    } else {
+      // Ambiguous pattern - log and skip (multiple different students match)
+      const names = Array.from(entries.values())
+        .map(e => `${e.displayName} (M${e.moodleUserId})`)
+        .join(', ');
+      ambiguousPatterns.push(`"${original}" [${confidence}] matches: ${names}`);
+    }
+  }
+  
+  if (ambiguousPatterns.length > 0) {
+    console.warn(`[PII] Ambiguous patterns detected (will be skipped):\n  - ${ambiguousPatterns.join('\n  - ')}`);
+  }
+  
+  return unambiguous;
+}
+
+/**
+ * Legacy function for backward compatibility - generates simple pattern list
+ */
+function generateNamePatterns(entry: PiiRosterEntry): string[] {
+  const patternsWithConf = generateNamePatternsWithConfidence(entry);
+  const unique = [...new Set(patternsWithConf.map(p => p.pattern))];
+  return unique.sort((a, b) => b.length - a.length);
 }
 
 /**
  * Mask PII in text before sending to LLM (egress)
  * 
  * Strategy:
- * 1. Replace KNOWN PII with reversible tokens (M#####:type)
- * 2. Replace UNKNOWN PII with one-way masks
+ * 1. Replace KNOWN PII with reversible tokens (M#####_type)
+ * 2. Skip AMBIGUOUS patterns that match multiple students
+ * 3. Replace UNKNOWN PII with one-way masks
  * 
  * @param text - The text to mask
  * @param roster - The roster entries for the current course
@@ -140,13 +332,7 @@ export function maskPII(text: string, roster: PiiRosterEntry[]): string {
     return maskUnknownPII(text);
   }
   
-  const lookup = buildRosterLookup(roster);
   let masked = text;
-  
-  // Sort roster by name length (longest first) to avoid partial matches
-  const sortedByNameLength = [...roster].sort(
-    (a, b) => b.displayName.length - a.displayName.length
-  );
   
   // IMPORTANT: Order matters! Replace longer/more specific patterns first:
   // 1. Emails (longest, may contain student IDs as substrings)
@@ -163,13 +349,17 @@ export function maskPII(text: string, roster: PiiRosterEntry[]): string {
   }
   
   // 2. Replace KNOWN names with reversible tokens (multiple formats)
-  // Handle: "First Last", "Last, First", "Last First"
-  for (const entry of sortedByNameLength) {
-    const patterns = generateNamePatterns(entry);
-    for (const pattern of patterns) {
-      const nameRegex = new RegExp(pattern, 'gi');
-      masked = masked.replace(nameRegex, `M${entry.moodleUserId}_name`);
-    }
+  // Use ambiguity-aware pattern map to skip patterns that match multiple students
+  const unambiguousPatterns = buildUnambiguousPatternMap(roster);
+  
+  // Sort patterns by length (longest first) to avoid partial matches
+  const sortedPatterns = Array.from(unambiguousPatterns.entries())
+    .sort((a, b) => b[1].original.length - a[1].original.length);
+  
+  for (const [normalizedPattern, { entry, original }] of sortedPatterns) {
+    // Use the original (non-normalized) pattern for case-insensitive matching
+    const nameRegex = new RegExp(escapeRegex(original), 'gi');
+    masked = masked.replace(nameRegex, `M${entry.moodleUserId}_name`);
   }
   
   // 3. Replace KNOWN student IDs with reversible tokens LAST

@@ -2,6 +2,10 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { verifyToken, generateApiKey, hashApiKey } from '../auth/jwt.js';
 import { db, users, apiKeys } from '../db/index.js';
+import { piiRosters } from '../pii/schema.js';
+import { maskPII, unmaskPII, maskStructuredData, unmaskStructuredData } from '../pii/mask.js';
+import { maskFile, unmaskFile } from '../pii/files.js';
+import { getUserCourses } from '../pii/roster.js';
 import { eq, and, isNull } from 'drizzle-orm';
 
 const api = new Hono();
@@ -142,6 +146,160 @@ api.get('/mcp-config', async (c) => {
   };
 
   return c.json(config);
+});
+
+// ==================== PII Mask/Unmask API ====================
+
+/**
+ * Mask text containing PII
+ * 
+ * POST /api/pii/mask
+ * Body: { text: string, course_id: number }
+ * Returns: { masked: string, stats: { names: number, emails: number, ids: number } }
+ */
+api.post('/pii/mask', async (c) => {
+  const userId = c.get('userId');
+  const body = await c.req.json<{ text: string; course_id: number }>();
+  
+  if (!body.text || !body.course_id) {
+    return c.json({ error: 'Missing text or course_id' }, 400);
+  }
+  
+  // Get roster for this course
+  const roster = await db
+    .select()
+    .from(piiRosters)
+    .where(
+      and(
+        eq(piiRosters.ownerUserId, userId),
+        eq(piiRosters.courseId, body.course_id)
+      )
+    );
+  
+  if (roster.length === 0) {
+    return c.json({ 
+      error: 'No roster found for this course. Please load participants first.',
+      masked: body.text,
+      stats: { names: 0, emails: 0, ids: 0, ambiguous: 0 }
+    }, 400);
+  }
+  
+  const masked = maskPII(body.text, roster);
+  
+  // Count replacements (approximate - count tokens in result)
+  const nameCount = (masked.match(/M\d+_name/g) || []).length;
+  const emailCount = (masked.match(/M\d+_email/g) || []).length;
+  const idCount = (masked.match(/M\d+_CID/g) || []).length;
+  
+  return c.json({
+    masked,
+    original_length: body.text.length,
+    masked_length: masked.length,
+    stats: {
+      names: nameCount,
+      emails: emailCount,
+      ids: idCount,
+    }
+  });
+});
+
+/**
+ * Unmask text containing mask tokens
+ * 
+ * POST /api/pii/unmask
+ * Body: { text: string, course_id: number }
+ * Returns: { unmasked: string, stats: { names: number, emails: number, ids: number } }
+ */
+api.post('/pii/unmask', async (c) => {
+  const userId = c.get('userId');
+  const body = await c.req.json<{ text: string; course_id: number }>();
+  
+  if (!body.text || !body.course_id) {
+    return c.json({ error: 'Missing text or course_id' }, 400);
+  }
+  
+  // Get roster for this course
+  const roster = await db
+    .select()
+    .from(piiRosters)
+    .where(
+      and(
+        eq(piiRosters.ownerUserId, userId),
+        eq(piiRosters.courseId, body.course_id)
+      )
+    );
+  
+  if (roster.length === 0) {
+    return c.json({ 
+      error: 'No roster found for this course. Please load participants first.',
+      unmasked: body.text,
+      stats: { names: 0, emails: 0, ids: 0 }
+    }, 400);
+  }
+  
+  const unmasked = unmaskPII(body.text, roster);
+  
+  // Count tokens that were in the original
+  const nameCount = (body.text.match(/M\d+[_:]name/g) || []).length;
+  const emailCount = (body.text.match(/M\d+[_:]email/g) || []).length;
+  const idCount = (body.text.match(/M\d+[_:]CID/g) || []).length;
+  
+  return c.json({
+    unmasked,
+    original_length: body.text.length,
+    unmasked_length: unmasked.length,
+    stats: {
+      names: nameCount,
+      emails: emailCount,
+      ids: idCount,
+    }
+  });
+});
+
+/**
+ * Get roster patterns for review
+ * 
+ * GET /api/pii/patterns/:course_id
+ * Returns list of name patterns and which students they match
+ */
+api.get('/pii/patterns/:course_id', async (c) => {
+  const userId = c.get('userId');
+  const courseId = parseInt(c.req.param('course_id'), 10);
+  
+  if (!courseId) {
+    return c.json({ error: 'Invalid course_id' }, 400);
+  }
+  
+  // Get roster
+  const roster = await db
+    .select()
+    .from(piiRosters)
+    .where(
+      and(
+        eq(piiRosters.ownerUserId, userId),
+        eq(piiRosters.courseId, courseId)
+      )
+    );
+  
+  if (roster.length === 0) {
+    return c.json({ error: 'No roster found' }, 404);
+  }
+  
+  // Build pattern summary
+  const patterns = roster.map(entry => ({
+    moodle_id: entry.moodleUserId,
+    display_name: entry.displayName,
+    email: entry.email,
+    student_id: entry.studentId,
+    role: entry.role,
+    token: `M${entry.moodleUserId}_name`,
+  }));
+  
+  return c.json({
+    course_id: courseId,
+    roster_size: roster.length,
+    patterns,
+  });
 });
 
 export default api;

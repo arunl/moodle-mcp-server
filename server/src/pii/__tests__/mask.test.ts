@@ -8,6 +8,7 @@ import { maskPII, unmaskPII, maskStructuredData, unmaskStructuredData } from '..
 import { buildRosterLookup } from '../roster.js';
 import {
   sampleRoster,
+  ambiguousRoster,
   rawParticipantsOutput,
   rawForumPostContent,
   llmGeneratedContent,
@@ -59,32 +60,32 @@ console.log('\n=== PII Masking Tests ===\n');
 test('Mask known name in string', () => {
   const input = 'Hello Jackson Smith, welcome!';
   const result = maskPII(input, sampleRoster);
-  assertContains(result, 'M12345:name');
+  assertContains(result, 'M12345_name');
   assertNotContains(result, 'Jackson Smith');
 });
 
 test('Mask known email in string', () => {
   const input = 'Contact: jackson.smith@louisiana.edu';
   const result = maskPII(input, sampleRoster);
-  assertContains(result, 'M12345:email');
+  assertContains(result, 'M12345_email');
   assertNotContains(result, 'jackson.smith@louisiana.edu');
 });
 
 test('Mask known student ID in string', () => {
   const input = 'Student ID: C00123456';
   const result = maskPII(input, sampleRoster);
-  assertContains(result, 'M12345:CID');
+  assertContains(result, 'M12345_CID');
   assertNotContains(result, 'C00123456');
 });
 
 test('Mask multiple known entities', () => {
   const result = maskPII(rawForumPostContent, sampleRoster);
   // Jackson Smith's info should be masked
-  assertContains(result, 'M12345:name');
-  assertContains(result, 'M12345:CID');
-  assertContains(result, 'M12345:email');
+  assertContains(result, 'M12345_name');
+  assertContains(result, 'M12345_CID');
+  assertContains(result, 'M12345_email');
   // Mary Johnson should be masked
-  assertContains(result, 'M12346:name');
+  assertContains(result, 'M12346_name');
   // Original PII should not be present
   assertNotContains(result, 'Jackson Smith');
   assertNotContains(result, 'C00123456');
@@ -93,11 +94,11 @@ test('Mask multiple known entities', () => {
 
 test('Mask participants list (object)', () => {
   const result = maskStructuredData(rawParticipantsOutput, sampleRoster) as typeof rawParticipantsOutput;
-  // Check first participant
-  assertEqual(result.participants[0].name, 'M12345:name');
-  assertEqual(result.participants[0].email, 'M12345:email');
+  // Check first participant (now uses underscore format)
+  assertEqual(result.participants[0].name, 'M12345_name');
+  assertEqual(result.participants[0].email, 'M12345_email');
   // Check second participant  
-  assertEqual(result.participants[1].name, 'M12346:name');
+  assertEqual(result.participants[1].name, 'M12346_name');
   // Check non-PII fields preserved
   assertEqual(result.participants[0].id, 12345);
   assertEqual(result.page, 0);
@@ -106,7 +107,7 @@ test('Mask participants list (object)', () => {
 test('Mask instructor/teacher names', () => {
   const input = 'Contact Arun Lakhotia for help.';
   const result = maskPII(input, sampleRoster);
-  assertContains(result, 'M99999:name');
+  assertContains(result, 'M99999_name');
   assertNotContains(result, 'Arun Lakhotia');
 });
 
@@ -199,14 +200,14 @@ test('Null input handles gracefully', () => {
 test('Array input is processed recursively', () => {
   const input = ['Jackson Smith', 'Mary Johnson'];
   const result = maskStructuredData(input, sampleRoster);
-  assertEqual(result, ['M12345:name', 'M12346:name']);
+  assertEqual(result, ['M12345_name', 'M12346_name']);
 });
 
 test('Case insensitivity - names are matched case-insensitive', () => {
   // The current implementation uses case-insensitive matching
   const input = 'JACKSON SMITH should match';
   const result = maskPII(input, sampleRoster);
-  assertContains(result, 'M12345:name');
+  assertContains(result, 'M12345_name');
 });
 
 test('Partial name should not match', () => {
@@ -214,6 +215,128 @@ test('Partial name should not match', () => {
   const result = maskPII(input, sampleRoster);
   // Should not mask partial names - only full "Jackson Smith"
   assertNotContains(result, 'M12345:name');
+});
+
+// ==================== Middle Name Tests (FERPA Bug Fix) ====================
+
+test('FERPA: First+Last should mask when roster has First Middle Last', () => {
+  // This is THE critical FERPA bug fix
+  // Roster has "Matheus John Nery" but user types "Matheus Nery"
+  const input = 'Member (Flex): Matheus Nery';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M21011_name');
+  assertNotContains(result, 'Matheus Nery');
+});
+
+test('FERPA: Full name with middle should still mask', () => {
+  const input = 'Contact Matheus John Nery for info';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M21011_name');
+  assertNotContains(result, 'Matheus John Nery');
+});
+
+test('FERPA: Last, First should mask when roster has middle name', () => {
+  const input = 'Team member: Nery, Matheus';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M21011_name');
+  assertNotContains(result, 'Nery, Matheus');
+});
+
+test('FERPA: First M. Last should mask (middle initial with period)', () => {
+  const input = 'Contact Matheus J. Nery';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M21011_name');
+  assertNotContains(result, 'Matheus J. Nery');
+});
+
+test('FERPA: First M Last should mask (middle initial without period)', () => {
+  const input = 'Contact Matheus J Nery';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M21011_name');
+  assertNotContains(result, 'Matheus J Nery');
+});
+
+test('FERPA: F. Last should mask (first initial)', () => {
+  const input = 'Ask M. Nery for help';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M21011_name');
+  assertNotContains(result, 'M. Nery');
+});
+
+test('FERPA: Last, F. should mask (first initial with comma)', () => {
+  const input = 'Team: Nery, M.';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M21011_name');
+  assertNotContains(result, 'Nery, M.');
+});
+
+test('FERPA: Works for names without middle names too', () => {
+  // "Jackson Smith" has no middle name - should still work
+  const input = 'Contact J. Smith for info';
+  const result = maskPII(input, sampleRoster);
+  assertContains(result, 'M12345_name');
+  assertNotContains(result, 'J. Smith');
+});
+
+// ==================== Ambiguity Detection Tests ====================
+
+test('Ambiguity: Full name with middle is unique and masks correctly', () => {
+  // "John Michael Smith" is unique (only one person has that full name)
+  const input = 'Contact John Michael Smith for details.';
+  const result = maskPII(input, ambiguousRoster);
+  assertContains(result, 'M30001_name');
+  assertNotContains(result, 'John Michael Smith');
+});
+
+test('Ambiguity: Different full name with middle also masks correctly', () => {
+  // "John David Smith" is also unique
+  const input = 'Contact John David Smith for details.';
+  const result = maskPII(input, ambiguousRoster);
+  assertContains(result, 'M30002_name');
+  assertNotContains(result, 'John David Smith');
+});
+
+test('Ambiguity: "John Smith" is ambiguous and skipped (not masked)', () => {
+  // "John Smith" matches both John Michael Smith AND John David Smith
+  // Should NOT be masked because it's ambiguous
+  const input = 'Contact John Smith for details.';
+  const result = maskPII(input, ambiguousRoster);
+  // The name should remain (one-way masking may apply, but reversible masking should not)
+  assertNotContains(result, 'M30001_name');
+  assertNotContains(result, 'M30002_name');
+  // Original name may be one-way masked or remain as-is (depending on title prefix)
+});
+
+test('Ambiguity: "J. Smith" is ambiguous and skipped', () => {
+  // First initial + last name is highly ambiguous with two John Smiths
+  const input = 'Contact J. Smith for help.';
+  const result = maskPII(input, ambiguousRoster);
+  assertNotContains(result, 'M30001_name');
+  assertNotContains(result, 'M30002_name');
+});
+
+test('Ambiguity: Unique student masks correctly even with ambiguous roster', () => {
+  // Sarah Jane Connor is unique - should always mask correctly
+  const input = 'Contact Sarah Connor for info.';
+  const result = maskPII(input, ambiguousRoster);
+  assertContains(result, 'M30003_name');
+  assertNotContains(result, 'Sarah Connor');
+});
+
+test('Ambiguity: Emails are still unique and mask correctly', () => {
+  // Even if names are ambiguous, emails should be unique
+  const input = 'Email john.m.smith@louisiana.edu or john.d.smith@louisiana.edu';
+  const result = maskPII(input, ambiguousRoster);
+  assertContains(result, 'M30001_email');
+  assertContains(result, 'M30002_email');
+});
+
+test('Ambiguity: Student IDs are unique and mask correctly', () => {
+  // Student IDs should always be unique
+  const input = 'Students C00111111 and C00222222 enrolled.';
+  const result = maskPII(input, ambiguousRoster);
+  assertContains(result, 'M30001_CID');
+  assertContains(result, 'M30002_CID');
 });
 
 // ==================== Round-trip Test ====================

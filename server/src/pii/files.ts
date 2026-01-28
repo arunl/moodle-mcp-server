@@ -1,17 +1,18 @@
 /**
- * File Unmasking Module
+ * File Masking/Unmasking Module
  * 
- * Unmask PII tokens in various file formats:
+ * Mask and unmask PII in various file formats:
  * - CSV, TSV, TXT: Plain text replacement
  * - DOCX, XLSX, PPTX: ZIP archives with XML content
  * 
  * Usage:
+ *   const masked = await maskFile(buffer, filename, roster);
  *   const unmasked = await unmaskFile(buffer, filename, roster);
  *   // Returns { buffer: Buffer, filename: string, mimeType: string }
  */
 
 import AdmZip from 'adm-zip';
-import { unmaskPII } from './mask.js';
+import { maskPII, unmaskPII } from './mask.js';
 import type { PiiRosterEntry } from './schema.js';
 
 export interface UnmaskedFile {
@@ -49,6 +50,54 @@ function detectFileType(filename: string): FileType {
     case 'pptx': return 'pptx';
     default: return 'unknown';
   }
+}
+
+export interface MaskedFile {
+  buffer: Buffer;
+  filename: string;
+  mimeType: string;
+}
+
+/**
+ * Mask a file - replace PII with tokens
+ * This is the reverse of unmaskFile
+ */
+export async function maskFile(
+  buffer: Buffer,
+  filename: string,
+  roster: PiiRosterEntry[]
+): Promise<MaskedFile> {
+  const fileType = detectFileType(filename);
+  
+  let maskedBuffer: Buffer;
+  
+  switch (fileType) {
+    case 'csv':
+    case 'tsv':
+    case 'txt':
+      maskedBuffer = maskTextFile(buffer, roster);
+      break;
+    
+    case 'docx':
+    case 'xlsx':
+    case 'pptx':
+      maskedBuffer = maskOfficeDocument(buffer, roster, fileType);
+      break;
+    
+    default:
+      // Unknown format - try as text, fall back to unchanged
+      try {
+        maskedBuffer = maskTextFile(buffer, roster);
+      } catch {
+        maskedBuffer = buffer;
+      }
+  }
+  
+  return {
+    buffer: maskedBuffer,
+    filename,
+    mimeType: MIME_TYPES[fileType],
+  };
 }
 
 /**
@@ -93,12 +142,70 @@ export async function unmaskFile(
 }
 
 /**
+ * Mask plain text files (CSV, TSV, TXT)
+ */
+function maskTextFile(buffer: Buffer, roster: PiiRosterEntry[]): Buffer {
+  const text = buffer.toString('utf-8');
+  const masked = maskPII(text, roster);
+  return Buffer.from(masked, 'utf-8');
+}
+
+/**
  * Unmask plain text files (CSV, TSV, TXT)
  */
 function unmaskTextFile(buffer: Buffer, roster: PiiRosterEntry[]): Buffer {
   const text = buffer.toString('utf-8');
   const unmasked = unmaskPII(text, roster);
   return Buffer.from(unmasked, 'utf-8');
+}
+
+/**
+ * Mask Office documents (DOCX, XLSX, PPTX)
+ * 
+ * These are ZIP archives containing XML files.
+ * We extract, mask XML content, and repackage.
+ */
+function maskOfficeDocument(
+  buffer: Buffer,
+  roster: PiiRosterEntry[],
+  fileType: 'docx' | 'xlsx' | 'pptx'
+): Buffer {
+  const zip = new AdmZip(buffer);
+  const entries = zip.getEntries();
+  
+  // Define which XML files contain content for each format
+  const contentPatterns: Record<string, RegExp[]> = {
+    docx: [
+      /^word\/document\.xml$/,
+      /^word\/header\d*\.xml$/,
+      /^word\/footer\d*\.xml$/,
+    ],
+    xlsx: [
+      /^xl\/worksheets\/sheet\d+\.xml$/,
+      /^xl\/sharedStrings\.xml$/,  // Shared strings table
+    ],
+    pptx: [
+      /^ppt\/slides\/slide\d+\.xml$/,
+      /^ppt\/notesSlides\/notesSlide\d+\.xml$/,
+    ],
+  };
+  
+  const patterns = contentPatterns[fileType];
+  
+  for (const entry of entries) {
+    // Check if this entry matches any content pattern
+    const shouldMask = patterns.some(pattern => pattern.test(entry.entryName));
+    
+    if (shouldMask) {
+      const content = entry.getData().toString('utf-8');
+      const masked = maskPII(content, roster);
+      
+      // Update the entry with masked content
+      zip.updateFile(entry.entryName, Buffer.from(masked, 'utf-8'));
+    }
+  }
+  
+  return zip.toBuffer();
 }
 
 /**

@@ -48,6 +48,64 @@ export const sampleRoster: PiiRosterEntry[] = [
     createdAt: new Date(),
     updatedAt: new Date(),
   },
+  // Student with middle name - for testing FERPA bug fix
+  // Bug: "Matheus Nery" should match roster entry "Matheus John Nery"
+  {
+    id: 4,
+    ownerUserId: 'test-owner',
+    courseId: 56569,
+    moodleUserId: 21011,
+    displayName: 'Matheus John Nery',
+    studentId: 'C00789012',
+    email: 'matheus.nery@louisiana.edu',
+    role: 'student',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+];
+
+/**
+ * Roster with ambiguous names - for testing ambiguity detection
+ * Two different students both named "John Smith" (but with different middle names)
+ */
+export const ambiguousRoster: PiiRosterEntry[] = [
+  {
+    id: 1,
+    ownerUserId: 'test-owner',
+    courseId: 56570,
+    moodleUserId: 30001,
+    displayName: 'John Michael Smith',
+    studentId: 'C00111111',
+    email: 'john.m.smith@louisiana.edu',
+    role: 'student',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  {
+    id: 2,
+    ownerUserId: 'test-owner',
+    courseId: 56570,
+    moodleUserId: 30002,
+    displayName: 'John David Smith',
+    studentId: 'C00222222',
+    email: 'john.d.smith@louisiana.edu',
+    role: 'student',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  // Unique student - should always mask correctly
+  {
+    id: 3,
+    ownerUserId: 'test-owner',
+    courseId: 56570,
+    moodleUserId: 30003,
+    displayName: 'Sarah Jane Connor',
+    studentId: 'C00333333',
+    email: 'sarah.connor@louisiana.edu',
+    role: 'student',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
 ];
 
 /**

@@ -144,13 +144,47 @@ export async function unmaskArgs(
 }
 
 /**
- * Extract course ID from tool arguments if present
+ * Extract course ID from tool arguments
+ * 
+ * All course-specific tools MUST provide course_id. This function extracts it
+ * and validates that it's present for tools that require it.
+ * 
+ * Tools that DON'T require course_id (course discovery / low-level primitives):
+ * - get_browser_status, get_courses, browse_moodle
+ * - click_element, type_text, wait_for_element, extract_page_content
+ * - set_editor_content (uses course_id only for unmasking, optional)
  */
-export function extractCourseId(toolName: string, args: Record<string, unknown>): number | undefined {
-  // Tools that have course_id parameter
+export function extractCourseId(toolName: string, args: Record<string, unknown>, userId?: string): number | undefined {
   const courseIdParam = args.course_id;
   if (typeof courseIdParam === 'number') {
     return courseIdParam;
+  }
+  
+  // Tools that don't require course_id (discovery and low-level primitives)
+  const toolsWithoutCourseRequirement = [
+    'get_browser_status',
+    'get_courses',
+    'browse_moodle',
+    'click_element',
+    'type_text',
+    'wait_for_element',
+    'extract_page_content',
+    'set_editor_content',  // Optional - only for unmasking
+  ];
+  
+  if (!toolsWithoutCourseRequirement.includes(toolName)) {
+    // This tool SHOULD have course_id but doesn't - log warning
+    // In future, this could throw an error to enforce the requirement
+    console.warn(`[PII] extractCourseId: Tool '${toolName}' called without course_id - PII masking will fail!`);
+    
+    // Try to use existing context as fallback (for backwards compatibility during transition)
+    if (userId) {
+      const existingContext = getCourseContext(userId);
+      if (existingContext) {
+        console.log(`[PII] extractCourseId: Using fallback context ${existingContext} for ${toolName}`);
+        return existingContext;
+      }
+    }
   }
   
   return undefined;

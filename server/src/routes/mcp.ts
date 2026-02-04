@@ -293,7 +293,8 @@ async function handleToolCall(
 
   try {
     // Extract course ID from args and set context for PII masking
-    const courseId = extractCourseId(name, rawArgs);
+    // Pass userId so forum tools can fall back to existing context
+    const courseId = extractCourseId(name, rawArgs, userId);
     if (courseId) {
       setCourseContext(userId, courseId);
     }
@@ -1540,6 +1541,7 @@ async function handleToolCall(
     }
 
     // Mask PII in result before sending to LLM
+    // courseId is required for all course-specific tools (enforced via extractCourseId warnings)
     console.log(`[PII] Masking result for userId=${userId}, courseId=${courseId}`);
     const maskedResult = await maskResult(userId, result, courseId);
 

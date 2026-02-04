@@ -289,8 +289,9 @@ Returns:
       type: 'object',
       properties: {
         forum_view_id: { type: 'number', description: 'The id parameter for mod/forum/view.php?id=... (forum cmid).' },
+        course_id: { type: 'number', description: 'The course ID. Required for PII masking.' },
       },
-      required: ['forum_view_id'],
+      required: ['forum_view_id', 'course_id'],
     },
   },
   {
@@ -427,19 +428,20 @@ Returns assignment names, due dates, submission counts, and grading status.`,
     name: 'get_assignment_submissions',
     description: `Get the list of submissions for an assignment.
     
-Returns student names, submission status, grades, and feedback.
+Returns student names (masked), submission status, grades, and feedback.
 Useful for grading overview.`,
     inputSchema: {
       type: 'object',
       properties: {
         assignment_id: { type: 'number', description: 'The assignment cmid.' },
+        course_id: { type: 'number', description: 'The course ID. Required for PII masking.' },
         filter: { 
           type: 'string', 
           description: 'Filter submissions: "all", "submitted", "needs_grading", "not_submitted". Defaults to "all".',
           default: 'all',
         },
       },
-      required: ['assignment_id'],
+      required: ['assignment_id', 'course_id'],
     },
   },
   {
@@ -769,9 +771,9 @@ Example with accessible table:
 Returns matching discussions with their IDs, which can then be used with delete_forum_discussion.
 
 Examples:
-- find_forum_discussion(forum_cmid=2618458, subject_pattern="TEST")
-- find_forum_discussion(forum_cmid=2618458, author="Arun Lakhotia")
-- find_forum_discussion(forum_cmid=2618458, subject_pattern="Announcement", limit=5)`,
+- find_forum_discussion(forum_cmid=2618458, course_id=56569, subject_pattern="TEST")
+- find_forum_discussion(forum_cmid=2618458, course_id=56569, author="M12345_name")
+- find_forum_discussion(forum_cmid=2618458, course_id=56569, subject_pattern="Announcement", limit=5)`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -779,13 +781,17 @@ Examples:
           type: 'number',
           description: 'The forum cmid (from mod/forum/view.php?id=...).',
         },
+        course_id: {
+          type: 'number',
+          description: 'The course ID. Required for PII masking.',
+        },
         subject_pattern: {
           type: 'string',
           description: 'Text to search for in discussion subjects (case-insensitive).',
         },
         author: {
           type: 'string',
-          description: 'Filter by author name (case-insensitive).',
+          description: 'Filter by author name (case-insensitive). Use mask tokens like M12345_name.',
         },
         limit: {
           type: 'number',
@@ -793,7 +799,7 @@ Examples:
           default: 10,
         },
       },
-      required: ['forum_cmid'],
+      required: ['forum_cmid', 'course_id'],
     },
   },
   {
@@ -806,7 +812,7 @@ Returns:
 - Post hierarchy (original post vs replies)
 - Useful for reading team formations, introductions, or any discussion content
 
-Example: get_forum_discussion(discussion_id=1234567)`,
+Example: get_forum_discussion(discussion_id=1234567, course_id=56569)`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -814,8 +820,12 @@ Example: get_forum_discussion(discussion_id=1234567)`,
           type: 'number',
           description: 'The discussion ID (d parameter from mod/forum/discuss.php?d=...). Use forum_list_discussions or find_forum_discussion to find this.',
         },
+        course_id: {
+          type: 'number',
+          description: 'The course ID. Required for PII masking.',
+        },
       },
-      required: ['discussion_id'],
+      required: ['discussion_id', 'course_id'],
     },
   },
   {
@@ -833,13 +843,17 @@ Requires confirm=true to execute.`,
           type: 'number',
           description: 'The discussion ID (d parameter from mod/forum/discuss.php?d=...). Use find_forum_discussion to find this from a subject.',
         },
+        course_id: {
+          type: 'number',
+          description: 'The course ID. Required for PII masking.',
+        },
         confirm: {
           type: 'boolean',
           description: 'Must be true to confirm deletion.',
           default: false,
         },
       },
-      required: ['discussion_id', 'confirm'],
+      required: ['discussion_id', 'course_id', 'confirm'],
     },
   },
   {

@@ -1,6 +1,7 @@
-import { getRoster, syncRoster, type MoodleParticipant } from './roster.js';
+import { getRoster, syncRoster, getGroups, syncGroups, type MoodleParticipant, type MoodleGroup } from './roster.js';
 import { maskStructuredData, unmaskStructuredData } from './mask.js';
 import { type PiiRosterEntry } from './schema.js';
+import { type PiiGroupEntry } from './group-schema.js';
 
 /**
  * PII Context Manager
@@ -18,6 +19,10 @@ const userCourseContext = new Map<string, number>();
 
 // In-memory cache of rosters (to avoid DB calls on every mask/unmask)
 const rosterCache = new Map<string, { roster: PiiRosterEntry[]; timestamp: number }>();
+
+// In-memory cache of groups (to avoid DB calls on every mask/unmask)
+const groupCache = new Map<string, { groups: PiiGroupEntry[]; timestamp: number }>();
+
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
@@ -60,11 +65,37 @@ async function getCachedRoster(userId: string, courseId: number): Promise<PiiRos
 }
 
 /**
+ * Get groups from cache or database
+ */
+async function getCachedGroups(userId: string, courseId: number): Promise<PiiGroupEntry[]> {
+  const cacheKey = `${userId}:${courseId}`;
+  const cached = groupCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.groups;
+  }
+  
+  // Fetch from database
+  const groups = await getGroups(userId, courseId);
+  groupCache.set(cacheKey, { groups, timestamp: Date.now() });
+  
+  return groups;
+}
+
+/**
  * Invalidate roster cache for a user/course
  */
 export function invalidateRosterCache(userId: string, courseId: number): void {
   const cacheKey = `${userId}:${courseId}`;
   rosterCache.delete(cacheKey);
+}
+
+/**
+ * Invalidate group cache for a user/course
+ */
+export function invalidateGroupCache(userId: string, courseId: number): void {
+  const cacheKey = `${userId}:${courseId}`;
+  groupCache.delete(cacheKey);
 }
 
 /**
@@ -82,6 +113,19 @@ export async function updateRoster(
 }
 
 /**
+ * Update groups when group data is extracted
+ * Call this when get_course_content, group-related tools return data
+ */
+export async function updateGroups(
+  userId: string,
+  courseId: number,
+  groups: MoodleGroup[]
+): Promise<void> {
+  await syncGroups(userId, courseId, groups);
+  invalidateGroupCache(userId, courseId);
+}
+
+/**
  * Mask tool result before sending to LLM
  */
 export async function maskResult(
@@ -94,12 +138,13 @@ export async function maskResult(
   if (!courseId) {
     // No course context - apply one-way masking only (no roster lookup)
     console.log(`[PII] maskResult: no courseId, applying one-way masking only`);
-    return maskStructuredData(result, []);
+    return maskStructuredData(result, [], []);
   }
   
   const roster = await getCachedRoster(userId, courseId);
-  console.log(`[PII] maskResult: courseId=${courseId}, roster size=${roster.length}`);
-  return maskStructuredData(result, roster);
+  const groups = await getCachedGroups(userId, courseId);
+  console.log(`[PII] maskResult: courseId=${courseId}, roster size=${roster.length}, groups size=${groups.length}`);
+  return maskStructuredData(result, roster, groups);
 }
 
 /**
@@ -121,7 +166,8 @@ export async function unmaskArgs(
   }
   
   const roster = await getCachedRoster(userId, courseId);
-  console.log(`[PII] unmaskArgs: roster size=${roster.length}`);
+  const groups = await getCachedGroups(userId, courseId);
+  console.log(`[PII] unmaskArgs: roster size=${roster.length}, groups size=${groups.length}`);
   
   if (roster.length > 0) {
     // Log sample of roster entries for debugging
@@ -129,7 +175,7 @@ export async function unmaskArgs(
     console.log(`[PII] unmaskArgs: sample roster entries: ${sample.join(', ')}`);
   }
   
-  const result = unmaskStructuredData(args, roster) as Record<string, unknown>;
+  const result = unmaskStructuredData(args, roster, groups) as Record<string, unknown>;
   
   // Check if any string fields changed
   const argsStr = JSON.stringify(args);
@@ -137,7 +183,7 @@ export async function unmaskArgs(
   if (argsStr !== resultStr) {
     console.log('[PII] unmaskArgs: Content was modified by unmask');
   } else {
-    console.log('[PII] unmaskArgs: Content unchanged (no tokens matched or roster empty)');
+    console.log('[PII] unmaskArgs: Content unchanged (no tokens matched or roster/groups empty)');
   }
   
   return result;

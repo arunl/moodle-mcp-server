@@ -25,6 +25,7 @@
 export * from './schema.js';
 export * from './file-schema.js';
 export * from './course-schema.js';
+export * from './group-schema.js';
 export * from './roster.js';
 export * from './mask.js';
 export * from './files.js';

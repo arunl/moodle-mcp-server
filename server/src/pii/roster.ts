@@ -1,6 +1,7 @@
 import { db } from '../db/index.js';
 import { piiRosters, type PiiRosterEntry, type NewPiiRosterEntry } from './schema.js';
 import { piiCourses, type PiiCourse } from './course-schema.js';
+import { piiGroups, type PiiGroupEntry, type NewPiiGroupEntry } from './group-schema.js';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -229,4 +230,133 @@ export async function getCourseName(
       )
     );
   return results[0]?.courseName || null;
+}
+
+// ============================================================================
+// Group/Team Management
+// ============================================================================
+
+/**
+ * Group data from Moodle (as returned by group-related tools)
+ */
+export interface MoodleGroup {
+  id: number;           // Moodle group ID
+  name: string;         // Group name (e.g., "Team 01-Webre")
+  description?: string;
+}
+
+/**
+ * Sync groups for a course from group data
+ * Called when get_course_content or group-related tools return data
+ */
+export async function syncGroups(
+  ownerUserId: string,
+  courseId: number,
+  groups: MoodleGroup[]
+): Promise<void> {
+  const now = new Date();
+  
+  for (const group of groups) {
+    if (!group.id || !group.name) {
+      console.warn(`Skipping group with missing id or name:`, group);
+      continue;
+    }
+    
+    const entry: NewPiiGroupEntry = {
+      ownerUserId,
+      courseId,
+      moodleGroupId: group.id,
+      groupName: group.name,
+      description: group.description || null,
+      updatedAt: now,
+    };
+    
+    // Upsert: insert or update on conflict
+    await db
+      .insert(piiGroups)
+      .values(entry)
+      .onConflictDoUpdate({
+        target: [piiGroups.ownerUserId, piiGroups.courseId, piiGroups.moodleGroupId],
+        set: {
+          groupName: entry.groupName,
+          description: entry.description,
+          updatedAt: now,
+        },
+      });
+  }
+}
+
+/**
+ * Get groups for a specific course
+ */
+export async function getGroups(
+  ownerUserId: string,
+  courseId: number
+): Promise<PiiGroupEntry[]> {
+  return db
+    .select()
+    .from(piiGroups)
+    .where(
+      and(
+        eq(piiGroups.ownerUserId, ownerUserId),
+        eq(piiGroups.courseId, courseId)
+      )
+    );
+}
+
+/**
+ * Find group by Moodle group ID
+ */
+export async function findGroupByMoodleId(
+  ownerUserId: string,
+  courseId: number,
+  moodleGroupId: number
+): Promise<PiiGroupEntry | undefined> {
+  const results = await db
+    .select()
+    .from(piiGroups)
+    .where(
+      and(
+        eq(piiGroups.ownerUserId, ownerUserId),
+        eq(piiGroups.courseId, courseId),
+        eq(piiGroups.moodleGroupId, moodleGroupId)
+      )
+    );
+  return results[0];
+}
+
+/**
+ * Clear groups for a course (useful for full refresh)
+ */
+export async function clearGroups(
+  ownerUserId: string,
+  courseId: number
+): Promise<void> {
+  await db
+    .delete(piiGroups)
+    .where(
+      and(
+        eq(piiGroups.ownerUserId, ownerUserId),
+        eq(piiGroups.courseId, courseId)
+      )
+    );
+}
+
+/**
+ * Build a lookup map for efficient group masking
+ * Returns maps for groupName → entry, moodleGroupId → entry
+ */
+export function buildGroupLookup(groups: PiiGroupEntry[]): {
+  byName: Map<string, PiiGroupEntry>;
+  byMoodleId: Map<number, PiiGroupEntry>;
+} {
+  const byName = new Map<string, PiiGroupEntry>();
+  const byMoodleId = new Map<number, PiiGroupEntry>();
+  
+  for (const entry of groups) {
+    byName.set(entry.groupName.toLowerCase(), entry);
+    byMoodleId.set(entry.moodleGroupId, entry);
+  }
+  
+  return { byName, byMoodleId };
 }

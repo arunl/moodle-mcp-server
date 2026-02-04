@@ -1,8 +1,9 @@
 import { type PiiRosterEntry } from './schema.js';
-import { buildRosterLookup } from './roster.js';
+import { type PiiGroupEntry } from './group-schema.js';
+import { buildRosterLookup, buildGroupLookup } from './roster.js';
 
 // Re-export for convenience
-export { buildRosterLookup };
+export { buildRosterLookup, buildGroupLookup };
 
 /**
  * Mask token format: M{moodleId}_{type}
@@ -25,6 +26,19 @@ const LEGACY_MASK_TOKEN_PATTERN = /M(\d+):(name|CID|email)/g;
  * These are treated as names by default
  */
 const BARE_MASK_TOKEN_PATTERN = /\bM(\d{3,6})\b(?![_:])/g;
+
+/**
+ * Group mask token format: G{groupId}_name
+ * Examples: G12345_name
+ * 
+ * Used for masking team/group names that may contain PII (e.g., "Team 01-Webre")
+ */
+const GROUP_MASK_TOKEN_PATTERN = /G(\d+)_name/g;
+
+/**
+ * Legacy group mask token format with colon separator
+ */
+const LEGACY_GROUP_MASK_TOKEN_PATTERN = /G(\d+):name/g;
 
 /**
  * Pattern for student IDs (C followed by 7-8 digits)
@@ -320,28 +334,39 @@ function generateNamePatterns(entry: PiiRosterEntry): string[] {
  * Mask PII in text before sending to LLM (egress)
  * 
  * Strategy:
- * 1. Replace KNOWN PII with reversible tokens (M#####_type)
+ * 1. Replace KNOWN PII with reversible tokens (M#####_type, G#####_name)
  * 2. Skip AMBIGUOUS patterns that match multiple students
  * 3. Replace UNKNOWN PII with one-way masks
  * 
  * @param text - The text to mask
  * @param roster - The roster entries for the current course
+ * @param groups - Optional group entries for the current course
  * @returns Masked text
  */
-export function maskPII(text: string, roster: PiiRosterEntry[]): string {
-  if (!text || roster.length === 0) {
-    // No roster loaded - apply one-way masking only
+export function maskPII(text: string, roster: PiiRosterEntry[], groups: PiiGroupEntry[] = []): string {
+  if (!text || (roster.length === 0 && groups.length === 0)) {
+    // No roster or groups loaded - apply one-way masking only
     return maskUnknownPII(text);
   }
   
   let masked = text;
   
   // IMPORTANT: Order matters! Replace longer/more specific patterns first:
+  // 0. Group names (may contain student names, must be replaced first)
   // 1. Emails (longest, may contain student IDs as substrings)
   // 2. Names (medium length, multiple format variations)
   // 3. Student IDs (shortest, may be substrings of emails)
   
-  // 1. Replace KNOWN emails with reversible tokens FIRST
+  // 0. Replace KNOWN group names with reversible tokens FIRST
+  // Group names often contain PII (e.g., "Team 01-Webre")
+  // Sort by length (longest first) to avoid partial matches
+  const sortedGroups = [...groups].sort((a, b) => b.groupName.length - a.groupName.length);
+  for (const group of sortedGroups) {
+    const groupPattern = new RegExp(escapeRegex(group.groupName), 'gi');
+    masked = masked.replace(groupPattern, `G${group.moodleGroupId}_name`);
+  }
+  
+  // 1. Replace KNOWN emails with reversible tokens
   // (emails like c00509352@louisiana.edu contain the student ID)
   for (const entry of roster) {
     if (entry.email) {
@@ -418,27 +443,29 @@ function maskUnknownPII(text: string): string {
  * Unmask PII tokens before posting to Moodle (ingress)
  * 
  * Reverses:
- * - Full tokens (new format): M#####_type (name, CID, email)
- * - Full tokens (legacy format): M#####:type (name, CID, email)
+ * - Full tokens (new format): M#####_type (name, CID, email), G#####_name
+ * - Full tokens (legacy format): M#####:type (name, CID, email), G#####:name
  * - Bare tokens: M##### (treated as names - some LLMs strip the suffix)
  * 
  * One-way masks (Jac***, C***456, jac**@domain) stay as-is
  * 
  * @param text - The text to unmask
  * @param roster - The roster entries for the current course
+ * @param groups - Optional group entries for the current course
  * @returns Unmasked text
  */
-export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
-  if (!text || roster.length === 0) {
+export function unmaskPII(text: string, roster: PiiRosterEntry[], groups: PiiGroupEntry[] = []): string {
+  if (!text || (roster.length === 0 && groups.length === 0)) {
     return text;
   }
   
-  const lookup = buildRosterLookup(roster);
+  const rosterLookup = buildRosterLookup(roster);
+  const groupLookup = buildGroupLookup(groups);
   
-  // Helper function to unmask a token by type
-  const unmaskToken = (match: string, moodleIdStr: string, type: string) => {
+  // Helper function to unmask a user token by type
+  const unmaskUserToken = (match: string, moodleIdStr: string, type: string) => {
     const moodleId = parseInt(moodleIdStr, 10);
-    const entry = lookup.byMoodleId.get(moodleId);
+    const entry = rosterLookup.byMoodleId.get(moodleId);
     
     if (!entry) {
       // Entry not in roster - can't unmask, leave token
@@ -457,17 +484,38 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
     }
   };
   
-  // First pass: unmask new format tokens (M12345_name, M12345_CID, etc.)
-  let result = text.replace(MASK_TOKEN_PATTERN, unmaskToken);
+  // Helper function to unmask a group token
+  const unmaskGroupToken = (match: string, groupIdStr: string) => {
+    const groupId = parseInt(groupIdStr, 10);
+    const entry = groupLookup.byMoodleId.get(groupId);
+    
+    if (!entry) {
+      // Entry not in groups - can't unmask, leave token
+      return match;
+    }
+    
+    return entry.groupName;
+  };
   
-  // Second pass: unmask legacy format tokens (M12345:name, M12345:CID, etc.)
-  result = result.replace(LEGACY_MASK_TOKEN_PATTERN, unmaskToken);
+  let result = text;
   
-  // Third pass: unmask bare tokens without type suffix (M12345)
+  // First pass: unmask group tokens (G12345_name)
+  result = result.replace(GROUP_MASK_TOKEN_PATTERN, unmaskGroupToken);
+  
+  // Second pass: unmask legacy group tokens (G12345:name)
+  result = result.replace(LEGACY_GROUP_MASK_TOKEN_PATTERN, unmaskGroupToken);
+  
+  // Third pass: unmask new format user tokens (M12345_name, M12345_CID, etc.)
+  result = result.replace(MASK_TOKEN_PATTERN, unmaskUserToken);
+  
+  // Fourth pass: unmask legacy format user tokens (M12345:name, M12345:CID, etc.)
+  result = result.replace(LEGACY_MASK_TOKEN_PATTERN, unmaskUserToken);
+  
+  // Fifth pass: unmask bare tokens without type suffix (M12345)
   // Some LLMs strip the _name/_CID/_email suffix, so treat bare tokens as names
   result = result.replace(BARE_MASK_TOKEN_PATTERN, (match, moodleIdStr) => {
     const moodleId = parseInt(moodleIdStr, 10);
-    const entry = lookup.byMoodleId.get(moodleId);
+    const entry = rosterLookup.byMoodleId.get(moodleId);
     
     if (!entry) {
       // Entry not in roster - can't unmask, leave token
@@ -482,14 +530,20 @@ export function unmaskPII(text: string, roster: PiiRosterEntry[]): string {
 }
 
 /**
- * Check if text contains any mask tokens (new or legacy format)
+ * Check if text contains any mask tokens (new or legacy format, user or group)
  */
 export function containsMaskTokens(text: string): boolean {
-  return MASK_TOKEN_PATTERN.test(text) || LEGACY_MASK_TOKEN_PATTERN.test(text) || BARE_MASK_TOKEN_PATTERN.test(text);
+  return (
+    MASK_TOKEN_PATTERN.test(text) || 
+    LEGACY_MASK_TOKEN_PATTERN.test(text) || 
+    BARE_MASK_TOKEN_PATTERN.test(text) ||
+    GROUP_MASK_TOKEN_PATTERN.test(text) ||
+    LEGACY_GROUP_MASK_TOKEN_PATTERN.test(text)
+  );
 }
 
 /**
- * Extract all Moodle IDs referenced in mask tokens (new, legacy, and bare formats)
+ * Extract all Moodle user IDs referenced in mask tokens (new, legacy, and bare formats)
  */
 export function extractMoodleIds(text: string): number[] {
   const ids: number[] = [];
@@ -517,6 +571,28 @@ export function extractMoodleIds(text: string): number[] {
 }
 
 /**
+ * Extract all Moodle group IDs referenced in group mask tokens
+ */
+export function extractGroupIds(text: string): number[] {
+  const ids: number[] = [];
+  let match;
+  
+  // Check new format (underscore)
+  const newPattern = new RegExp(GROUP_MASK_TOKEN_PATTERN.source, 'g');
+  while ((match = newPattern.exec(text)) !== null) {
+    ids.push(parseInt(match[1], 10));
+  }
+  
+  // Check legacy format (colon)
+  const legacyPattern = new RegExp(LEGACY_GROUP_MASK_TOKEN_PATTERN.source, 'g');
+  while ((match = legacyPattern.exec(text)) !== null) {
+    ids.push(parseInt(match[1], 10));
+  }
+  
+  return [...new Set(ids)]; // Deduplicate
+}
+
+/**
  * Escape special regex characters in a string
  */
 function escapeRegex(str: string): string {
@@ -527,25 +603,25 @@ function escapeRegex(str: string): string {
  * Mask structured data (objects/arrays) recursively
  * Also masks object keys (e.g., when names are used as keys like in replierCounts)
  */
-export function maskStructuredData(data: unknown, roster: PiiRosterEntry[]): unknown {
+export function maskStructuredData(data: unknown, roster: PiiRosterEntry[], groups: PiiGroupEntry[] = []): unknown {
   if (data === null || data === undefined) {
     return data;
   }
   
   if (typeof data === 'string') {
-    return maskPII(data, roster);
+    return maskPII(data, roster, groups);
   }
   
   if (Array.isArray(data)) {
-    return data.map(item => maskStructuredData(item, roster));
+    return data.map(item => maskStructuredData(item, roster, groups));
   }
   
   if (typeof data === 'object') {
     const masked: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       // Mask both keys AND values - names can appear as object keys (e.g., replierCounts)
-      const maskedKey = maskPII(key, roster);
-      masked[maskedKey] = maskStructuredData(value, roster);
+      const maskedKey = maskPII(key, roster, groups);
+      masked[maskedKey] = maskStructuredData(value, roster, groups);
     }
     return masked;
   }
@@ -557,25 +633,25 @@ export function maskStructuredData(data: unknown, roster: PiiRosterEntry[]): unk
  * Unmask structured data (objects/arrays) recursively
  * Also unmasks object keys (for consistency with maskStructuredData)
  */
-export function unmaskStructuredData(data: unknown, roster: PiiRosterEntry[]): unknown {
+export function unmaskStructuredData(data: unknown, roster: PiiRosterEntry[], groups: PiiGroupEntry[] = []): unknown {
   if (data === null || data === undefined) {
     return data;
   }
   
   if (typeof data === 'string') {
-    return unmaskPII(data, roster);
+    return unmaskPII(data, roster, groups);
   }
   
   if (Array.isArray(data)) {
-    return data.map(item => unmaskStructuredData(item, roster));
+    return data.map(item => unmaskStructuredData(item, roster, groups));
   }
   
   if (typeof data === 'object') {
     const unmasked: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       // Unmask both keys AND values
-      const unmaskedKey = unmaskPII(key, roster);
-      unmasked[unmaskedKey] = unmaskStructuredData(value, roster);
+      const unmaskedKey = unmaskPII(key, roster, groups);
+      unmasked[unmaskedKey] = unmaskStructuredData(value, roster, groups);
     }
     return unmasked;
   }

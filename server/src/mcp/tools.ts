@@ -258,6 +258,17 @@ ACCESSIBILITY REQUIREMENTS - All HTML content MUST follow these guidelines:
     },
   },
   {
+    name: 'list_groups',
+    description: `List all groups (teams) in a course.\n\nNavigates to the course groups page and extracts group names and IDs.\nUseful for:\n- Getting team assignments before analyzing forum posts\n- Finding group IDs for filtering participants\n- Syncing group data for PII masking (group names may contain student names)`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course_id: { type: 'number', description: 'The Moodle course ID.' },
+      },
+      required: ['course_id'],
+    },
+  },
+  {
     name: 'enable_editing',
     description: 'Enable editing mode for a course (course/view.php?id=...&notifyeditingon=1).',
     inputSchema: {

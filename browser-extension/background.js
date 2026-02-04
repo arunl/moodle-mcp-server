@@ -250,6 +250,8 @@ async function handleCommand(command) {
         return await handleExtractFirstPostId(id, params, tab);
       case 'extract_courses':
         return await handleExtractCourses(id, params, tab);
+      case 'extract_groups':
+        return await handleExtractGroups(id, params, tab);
       default:
         return { id, success: false, error: `Unknown action: ${action}` };
     }
@@ -2111,6 +2113,176 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Try to connect when extension starts
 connectWebSocket();
+
+// Extract groups from a Moodle course groups page
+// Works on /group/index.php, /group/overview.php, and course pages with group data
+async function handleExtractGroups(id, params, tab) {
+  console.log('[MoodleMCP] handleExtractGroups starting...');
+  
+  const result = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const groups = [];
+      const url = window.location.href;
+      
+      // Extract course ID from URL
+      let courseId = null;
+      const courseMatch = url.match(/[?&]id=(\d+)/);
+      if (courseMatch) {
+        courseId = parseInt(courseMatch[1]);
+      }
+      
+      // Method 1: Groups index page (/group/index.php) - look for select options
+      const groupSelect = document.querySelector('select[name="group"], #groups, select[id*="group"]');
+      if (groupSelect) {
+        const options = groupSelect.querySelectorAll('option');
+        options.forEach(option => {
+          const value = option.value;
+          const name = option.textContent?.trim();
+          // Skip "All participants" or empty options
+          if (value && name && value !== '0' && value !== '-1' && value !== '' && !name.includes('All participants')) {
+            groups.push({
+              id: parseInt(value),
+              name: name,
+              source: 'select'
+            });
+          }
+        });
+      }
+      
+      // Method 2: Groups overview page (/group/overview.php) - look for group headers in the content
+      // The overview page shows groups in expandable sections
+      const groupHeaders = document.querySelectorAll('.grouptitle, h3.group-name, .groupname, [data-groupid]');
+      groupHeaders.forEach(header => {
+        const groupId = header.dataset?.groupid;
+        const name = header.textContent?.trim();
+        if (groupId && name) {
+          groups.push({
+            id: parseInt(groupId),
+            name: name,
+            source: 'header'
+          });
+        }
+      });
+      
+      // Method 3: Look for links to group pages which contain group IDs
+      const groupLinks = document.querySelectorAll('a[href*="group/group.php?id="], a[href*="group/members.php?group="]');
+      groupLinks.forEach(link => {
+        const href = link.href;
+        const idMatch = href.match(/[?&](?:id|group)=(\d+)/);
+        if (idMatch) {
+          const groupId = parseInt(idMatch[1]);
+          // Get the group name from the link text or nearby element
+          let name = link.textContent?.trim();
+          // Sometimes the name is in a parent cell
+          if (!name || name.length < 2) {
+            const cell = link.closest('td, div');
+            name = cell?.textContent?.trim()?.split('\n')[0];
+          }
+          if (name && !groups.some(g => g.id === groupId)) {
+            groups.push({
+              id: groupId,
+              name: name,
+              source: 'link'
+            });
+          }
+        }
+      });
+      
+      // Method 4: Look for group tables (common in Moodle group pages)
+      const groupTable = document.querySelector('table.groups, table.generaltable, #groups-table');
+      if (groupTable) {
+        const rows = groupTable.querySelectorAll('tbody tr, tr:not(:first-child)');
+        rows.forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 1) {
+            const nameCell = cells[0];
+            const link = nameCell.querySelector('a[href*="group"]');
+            let groupId = null;
+            let name = null;
+            
+            if (link) {
+              const idMatch = link.href.match(/[?&](?:id|group)=(\d+)/);
+              if (idMatch) groupId = parseInt(idMatch[1]);
+              name = link.textContent?.trim();
+            } else {
+              name = nameCell.textContent?.trim();
+            }
+            
+            // Try to get ID from row data attribute
+            if (!groupId) {
+              groupId = row.dataset?.groupid ? parseInt(row.dataset.groupid) : null;
+            }
+            
+            if (name && !groups.some(g => g.name === name)) {
+              groups.push({
+                id: groupId,
+                name: name,
+                source: 'table'
+              });
+            }
+          }
+        });
+      }
+      
+      // Method 5: Look for group information in course page sidebar or blocks
+      const groupBlocks = document.querySelectorAll('.block_mygroups .content li, .block_course_overview .group-name');
+      groupBlocks.forEach(block => {
+        const link = block.querySelector('a[href*="group"]');
+        const name = block.textContent?.trim();
+        let groupId = null;
+        
+        if (link) {
+          const idMatch = link.href.match(/[?&](?:id|group)=(\d+)/);
+          if (idMatch) groupId = parseInt(idMatch[1]);
+        }
+        
+        if (name && !groups.some(g => g.name === name)) {
+          groups.push({
+            id: groupId,
+            name: name,
+            source: 'block'
+          });
+        }
+      });
+      
+      // Deduplicate by ID (prefer entries with IDs)
+      const uniqueGroups = [];
+      const seenIds = new Set();
+      const seenNames = new Set();
+      
+      // First pass: groups with IDs
+      groups.filter(g => g.id).forEach(g => {
+        if (!seenIds.has(g.id)) {
+          seenIds.add(g.id);
+          seenNames.add(g.name);
+          uniqueGroups.push(g);
+        }
+      });
+      
+      // Second pass: groups without IDs (but unique names)
+      groups.filter(g => !g.id).forEach(g => {
+        if (!seenNames.has(g.name)) {
+          seenNames.add(g.name);
+          uniqueGroups.push(g);
+        }
+      });
+      
+      return {
+        success: true,
+        data: {
+          groups: uniqueGroups,
+          count: uniqueGroups.length,
+          courseId: courseId,
+          url: url,
+        },
+      };
+    },
+  });
+  
+  console.log('[MoodleMCP] handleExtractGroups result:', JSON.stringify(result[0]?.result, null, 2));
+  return { id, ...result[0].result };
+}
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

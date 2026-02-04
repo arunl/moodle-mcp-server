@@ -11,11 +11,14 @@ import {
   maskResult,
   unmaskArgs,
   updateRoster,
+  updateGroups,
   setCourseContext,
   extractCourseId,
   shouldUpdateRoster,
+  shouldSyncGroups,
   shouldUnmaskArgs,
   extractParticipantsFromResult,
+  extractGroupsFromResult,
   upsertCourseName,
 } from '../pii/index.js';
 
@@ -423,6 +426,45 @@ async function handleToolCall(
           }
         } else {
           console.log(`[MCP] No courseTitle found in participantsData`);
+        }
+        break;
+
+      case 'list_groups':
+        // Navigate to the groups index page
+        await sendBrowserCommand(userId, 'navigate', {
+          url: `/group/index.php?id=${args.course_id}`,
+        });
+        await sendBrowserCommand(userId, 'wait', { selector: 'body', timeout: 10000 });
+        
+        // Extract groups using dedicated handler
+        const groupsResult = await sendBrowserCommand(userId, 'extract_groups', {});
+        
+        console.log(`[MCP] list_groups raw result:`, JSON.stringify(groupsResult, null, 2));
+        
+        // Flatten the result
+        const groupsData = groupsResult?.data || groupsResult || {};
+        const extractedGroups = groupsData.groups || [];
+        
+        result = {
+          course_id: args.course_id,
+          groups: extractedGroups,
+          count: extractedGroups.length,
+          url: groupsData.url,
+        };
+        
+        // Auto-sync groups to database for PII masking
+        if (extractedGroups.length > 0) {
+          const groupsToSync = extractedGroups
+            .filter((g: { id?: number; name?: string }) => g.id && g.name)
+            .map((g: { id: number; name: string }) => ({
+              id: g.id,
+              name: g.name,
+            }));
+          
+          if (groupsToSync.length > 0) {
+            console.log(`[PII] list_groups: syncing ${groupsToSync.length} groups for course ${args.course_id}`);
+            await updateGroups(userId, args.course_id, groupsToSync);
+          }
         }
         break;
 
@@ -1537,6 +1579,15 @@ async function handleToolCall(
       if (participants && participants.length > 0 && courseId) {
         console.log(`[PII] Updating roster for course ${courseId} with ${participants.length} participants`);
         await updateRoster(userId, courseId, participants);
+      }
+    }
+    
+    // Sync groups if this tool returns group data
+    if (shouldSyncGroups(name) && result && courseId) {
+      const groups = extractGroupsFromResult(name, result);
+      if (groups && groups.length > 0) {
+        console.log(`[PII] Tool ${name}: extracted ${groups.length} groups for sync`);
+        await updateGroups(userId, courseId, groups);
       }
     }
 

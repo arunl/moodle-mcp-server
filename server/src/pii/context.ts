@@ -1,4 +1,5 @@
 import { getRoster, syncRoster, getGroups, syncGroups, type MoodleParticipant, type MoodleGroup } from './roster.js';
+export type { MoodleGroup } from './roster.js';
 import { maskStructuredData, unmaskStructuredData } from './mask.js';
 import { type PiiRosterEntry } from './schema.js';
 import { type PiiGroupEntry } from './group-schema.js';
@@ -249,6 +250,18 @@ export function shouldUpdateRoster(toolName: string): boolean {
 }
 
 /**
+ * Check if a tool returns group data that should sync groups
+ * Note: list_groups handles its own sync directly in the route handler
+ */
+export function shouldSyncGroups(toolName: string): boolean {
+  return [
+    'get_course_content',      // Course content often includes groups
+    'open_course',             // When opening a course
+    'enable_editing',          // When enabling editing, group info may appear
+  ].includes(toolName);
+}
+
+/**
  * Check if a tool's args should be unmasked (contains content that might have mask tokens)
  */
 export function shouldUnmaskArgs(toolName: string): boolean {
@@ -298,6 +311,59 @@ export function extractParticipantsFromResult(
       // These might have participants embedded
       // For now, don't extract - let explicit list_participants handle it
       break;
+  }
+  
+  return null;
+}
+
+/**
+ * Extract group data from tool result for group sync
+ */
+export function extractGroupsFromResult(
+  toolName: string,
+  result: unknown
+): MoodleGroup[] | null {
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+  
+  const data = result as Record<string, unknown>;
+  
+  // Look for groups array in result
+  // Tools like get_course_content might have groups embedded
+  const groups = data.groups;
+  if (Array.isArray(groups)) {
+    return groups
+      .filter((g: Record<string, unknown>) => g.id && g.name)
+      .map((g: Record<string, unknown>) => ({
+        id: g.id as number,
+        name: g.name as string,
+        description: g.description as string | undefined,
+      }));
+  }
+  
+  // Look in sections for course content
+  const sections = data.sections;
+  if (Array.isArray(sections)) {
+    const foundGroups: MoodleGroup[] = [];
+    for (const section of sections) {
+      const sectionData = section as Record<string, unknown>;
+      const sectionGroups = sectionData.groups;
+      if (Array.isArray(sectionGroups)) {
+        for (const g of sectionGroups) {
+          const gData = g as Record<string, unknown>;
+          if (gData.id && gData.name) {
+            foundGroups.push({
+              id: gData.id as number,
+              name: gData.name as string,
+            });
+          }
+        }
+      }
+    }
+    if (foundGroups.length > 0) {
+      return foundGroups;
+    }
   }
   
   return null;
